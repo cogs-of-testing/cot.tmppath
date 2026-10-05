@@ -2,7 +2,7 @@
 
 *Written by Claude via Claude Code from Ronny's brief; Ronny prompted it.*
 
-Status: findings. cot.tmppath ships no pytest binding. This is how pytest can
+Status: findings, and the opt-in plugin they led to. This is how pytest can
 run with `tmp_path`, `tmp_path_factory`, `tmpdir` and `tmpdir_factory`
 replaced by fixtures backed by cot.tmppath, and what a replacement has to
 take care of.
@@ -97,12 +97,41 @@ is not worth relying on.
 7. **Layout.** Users who rely on paths like `pytest-of-{user}/pytest-{N}` get
    them from `PytestLayout`. Everyone else gets the flat layout.
 
-## Where the replacement lives
+## The opt-in plugin: `cot.tmppath.overtake_pytest`
 
-**Open.** "No binding directly" rules out a pytest plugin inside the
-`cot.tmppath` package. The choices are a separate distribution (for example
-`cot.tmppath-pytest`, entry point `pytest11`), an example plugin in this
-repository that projects copy, or the fixtures living in a project's own
-`conftest.py`. With an entry point, blocking `tmpdir` still needs
-`-p no:tmpdir` in `addopts`, because a plugin cannot cleanly unregister
-`tmpdir` once it is loaded.
+A project opts in with one line:
+
+```ini
+[pytest]
+addopts = -p cot.tmppath.overtake_pytest
+```
+
+It is a module in the package, not a `pytest11` entry point, so installing
+cot.tmppath changes nothing until a project asks for it. It does everything
+above:
+
+- In its `pytest_addoption` it unregisters the `tmpdir` plugin and blocks the
+  name, so `-p no:tmpdir` is not needed. A plugin given with `-p` is loaded
+  while the command line is pre-parsed, before any `pytest_configure`, so the
+  tmpdir plugin never configures itself, `config._tmp_path_factory` never
+  exists, and legacypath skips its `tmpdir` fixtures **(verified)**.
+- The tmpdir plugin's ini options were already registered by then, so
+  `tmp_path_retention_count` and `tmp_path_retention_policy` stay valid under
+  `--strict-config`. If the user also passes `-p no:tmpdir`, the plugin
+  registers both itself **(verified)**.
+- It provides all four fixtures. `tmpdir_factory` is the same object as
+  `tmp_path_factory`, which offers `mktemp` and `getbasetemp`.
+- The run is started on first use, not at configure time, so a session that
+  asks for no temporary folder creates nothing **(verified)**.
+- `--basetemp` becomes the root; otherwise the root is
+  `Root.for_project(rootdir name)`. pytest's retention settings map onto
+  `Retention`: `failed` keeps only failed items, `none` keeps no runs.
+- xdist workers get the root and run id through `pytest_configure_node` and
+  join the controller's run.
+- An item's fate is decided at its `teardown` report from setup, call and
+  teardown together.
+- Folders that could not be removed at the end are reported as
+  `PytestWarning`s.
+
+`testing/test_overtake_pytest.py` checks the takeover now and the behaviour
+once the core is built.

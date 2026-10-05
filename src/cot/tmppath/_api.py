@@ -133,7 +133,14 @@ class Root:
         raise NotImplementedError(_NOT_BUILT)
 
     @classmethod
-    def for_project(cls, project: str, *, temproot: Path | None = None) -> Root:
+    def for_project(
+        cls,
+        project: str,
+        *,
+        temproot: Path | None = None,
+        retention: Retention = _DEFAULT_RETENTION,
+        layout: Layout | None = None,
+    ) -> Root:
         """The default root for ``project`` under the system temp folder.
 
         Touches nothing on disk until the first run starts.

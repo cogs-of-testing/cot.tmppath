@@ -16,5 +16,12 @@ uv run mypy
 uv run --group bench pytest benchmarks
 ```
 
-There is no pytest binding. How pytest runs with its tmp fixtures replaced
-is in [docs/pytest-replacement.md](docs/pytest-replacement.md).
+pytest projects can opt in to having pytest's `tmp_path`, `tmp_path_factory`,
+`tmpdir` and `tmpdir_factory` replaced:
+
+```ini
+[pytest]
+addopts = -p cot.tmppath.overtake_pytest
+```
+
+How and why is in [docs/pytest-replacement.md](docs/pytest-replacement.md).

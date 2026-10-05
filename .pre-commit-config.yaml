@@ -20,6 +20,7 @@ repos:
     - id: mypy
       # checks what [tool.mypy] names, not the staged files alone
       pass_filenames: false
+      additional_dependencies: [ pytest ]
 
 - repo: https://github.com/zizmorcore/zizmor-pre-commit
   rev: v1.30.1
