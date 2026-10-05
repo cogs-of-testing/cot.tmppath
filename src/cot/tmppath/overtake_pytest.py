@@ -8,8 +8,9 @@ Enable it per project with::
 Loaded with ``-p``, it unregisters pytest's ``tmpdir`` plugin and provides
 ``tmp_path``, ``tmp_path_factory``, ``tmpdir`` and ``tmpdir_factory`` itself.
 pytest's ``tmp_path_retention_count`` and ``tmp_path_retention_policy``
-settings and ``--basetemp`` keep working, and pytest-xdist workers join the
-controller's run. See docs/pytest-replacement.md.
+settings keep working, and pytest-xdist workers join the controller's run.
+``--basetemp`` must name a folder that does not exist yet; it is created and
+nothing under it is ever deleted. See docs/pytest-replacement.md.
 
 This module imports pytest; the rest of cot.tmppath never does.
 """
@@ -25,7 +26,7 @@ from typing import Any
 import pytest
 from _pytest.compat import legacy_path
 
-from ._api import Outcome, Retention, Root, Run
+from ._api import KEEP_EVERYTHING, Outcome, Retention, Root, Run
 
 _RUN_ID = "cot_tmppath_run"
 _ROOT = "cot_tmppath_root"
@@ -84,7 +85,8 @@ class _State:
             return Root(Path(worker[_ROOT]), retention=retention)
         basetemp = self._config.option.basetemp
         if basetemp:
-            return Root(Path(basetemp), retention=retention)
+            # a folder the user named is never pruned, whatever retention says
+            return Root(Path(basetemp), retention=KEEP_EVERYTHING)
         return Root.for_project(self._config.rootpath.name, retention=retention)
 
     @property
@@ -110,6 +112,16 @@ class _State:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    basetemp = config.option.basetemp
+    # xdist hands workers the controller's options, by then the folder exists
+    is_worker = hasattr(config, "workerinput")
+    if basetemp and not is_worker and Path(basetemp).exists():
+        msg = (
+            f"--basetemp={basetemp} already exists. cot.tmppath only creates a"
+            " new folder there and never deletes one; remove it yourself or"
+            " name a path that does not exist yet."
+        )
+        raise pytest.UsageError(msg)
     config.stash[_state] = _State(config)
 
 

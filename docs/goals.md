@@ -98,8 +98,11 @@ Time is a goal, not an afterthought, and it is measured.
 - Keep-or-remove is decided from an item's **whole outcome**, which a host
   reports. For pytest that means setup, call and teardown, not `call` alone,
   which today discards the folders of tests that error in setup or teardown.
-- Retention works with any root, including a custom one, which `--basetemp`
-  cannot do ([#10829](https://github.com/pytest-dev/pytest/issues/10829)).
+- Retention works with any root a caller gives the library, which
+  `--basetemp` cannot do
+  ([#10829](https://github.com/pytest-dev/pytest/issues/10829)). For pytest's
+  `--basetemp` itself the rule is the opposite: it must name a new folder,
+  and nothing under it is ever deleted.
 - Retention is kept per project, so one project's runs never push out
   another's (in pytest today, every project shares one `pytest-of-{user}`
   counter).

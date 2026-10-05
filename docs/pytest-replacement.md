@@ -73,9 +73,11 @@ is not worth relying on.
 2. **`tmp_path_factory` duck type.** `mktemp(basename, numbered=True)` and
    `getbasetemp()`, as pytester and existing plugins and conftests call them.
 3. **`--basetemp`.** It is still parsed and validated by pytest. The
-   replacement reads `config.option.basetemp` and treats it as a custom root.
-   Unlike pytest, it refuses an existing folder it did not create (goals G1)
-   and keeps retention (G4).
+   replacement reads `config.option.basetemp` and treats it as a new folder
+   to create: an existing path is refused, because pytest's `--basetemp`
+   deletes whatever is there. Nothing under a `--basetemp` is ever deleted,
+   whatever the retention settings say; cleaning it up is the user's job.
+   xdist hands workers the controller's options, so workers skip the check.
 4. **xdist workers join the controller's run.** With A, xdist's `hasattr`
    check fails silently and workers get no basetemp at all. The replacement
    implements `pytest_configure_node` (as an `optionalhook`) to put the run's
@@ -123,9 +125,18 @@ above:
   `tmp_path_factory`, which offers `mktemp` and `getbasetemp`.
 - The run is started on first use, not at configure time, so a session that
   asks for no temporary folder creates nothing **(verified)**.
-- `--basetemp` becomes the root; otherwise the root is
-  `Root.for_project(rootdir name)`. pytest's retention settings map onto
-  `Retention`: `failed` keeps only failed items, `none` keeps no runs.
+- `--basetemp` must name a folder that does not exist yet; the plugin
+  refuses an existing one with a usage error **(verified)**, creates the new
+  one, and deletes nothing under it (`KEEP_EVERYTHING`).
+- Without `--basetemp`, the root is `Root.for_project(rootdir name)`, and
+  pytest's retention settings map onto `Retention`: `failed` keeps only
+  failed items, `none` keeps no runs.
+- **pytester caveat (verified):** `pytester.runpytest_subprocess` always
+  passes a `--basetemp` folder it has already created, and `runpytest`
+  passes one that exists from the second call in a test on. A test that runs
+  an inner pytest with the takeover therefore gets the usage error. Such
+  tests must pass their own new `--basetemp` (the last one given wins) or
+  run pytest through `pytester.run`. This repository's tests do the latter.
 - xdist workers get the root and run id through `pytest_configure_node` and
   join the controller's run.
 - An item's fate is decided at its `teardown` report from setup, call and

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ._api import (
+    KEEP_EVERYTHING,
     FlatLayout,
     Layout,
     Outcome,
@@ -15,6 +16,7 @@ from ._api import (
 )
 
 __all__ = [
+    "KEEP_EVERYTHING",
     "FlatLayout",
     "Layout",
     "Outcome",

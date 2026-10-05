@@ -7,6 +7,8 @@ behaviour tests are xfail until the core is built.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from conftest import not_built
@@ -18,7 +20,9 @@ PLUGIN = "cot.tmppath.overtake_pytest"
 
 
 def _run(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
-    return pytester.runpytest_subprocess("-p", "no:cacheprovider", *args)
+    # not runpytest_subprocess: it always adds a --basetemp it has already
+    # created, which the plugin refuses (and which disables retention)
+    return pytester.run(sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *args)
 
 
 def test_addopts_opt_in_takes_over(pytester: pytest.Pytester) -> None:
@@ -83,10 +87,13 @@ def test_fixtures_live_in_the_run(pytester: pytest.Pytester) -> None:
 
 @not_built
 def test_failed_policy_keeps_setup_and_teardown_failures(
-    pytester: pytest.Pytester,
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    base = pytester.path / "base"
-    Root(base)  # fail here, not in the child, while the core is a stub
+    # retention only applies without --basetemp, so give pytest its own temproot
+    temproot = pytester.mkdir("temproot")
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(name, str(temproot))
+    Root(temproot)  # fail here, not in the child, while the core is a stub
     pytester.makeini("[pytest]\ntmp_path_retention_policy = failed\n")
     pytester.makepyfile(
         """
@@ -106,8 +113,8 @@ def test_failed_policy_keeps_setup_and_teardown_failures(
         def test_teardown(broken_teardown): pass
         """
     )
-    _run(pytester, "-p", PLUGIN, f"--basetemp={base}")
-    kept = {p.name for run in base.iterdir() if run.is_dir() for p in run.iterdir()}
+    _run(pytester, "-p", PLUGIN)
+    kept = {p.name for p in temproot.rglob("test_*") if p.is_dir()}
     assert any(name.startswith("test_setup") for name in kept)
     assert any(name.startswith("test_teardown") for name in kept)
     assert not any(name.startswith("test_passes") for name in kept)
@@ -132,3 +139,36 @@ def test_xdist_workers_join_the_controllers_run(pytester: pytest.Pytester) -> No
     runs = [p for p in base.iterdir() if p.is_dir()]
     assert len(runs) == 1
     assert len(list(runs[0].iterdir())) >= 4
+
+
+def test_existing_basetemp_is_refused(pytester: pytest.Pytester) -> None:
+    existing = pytester.mkdir("existing")
+    precious = existing / "precious.txt"
+    precious.write_text("keep me")
+    pytester.makepyfile("def test_nothing(): pass")
+    result = _run(pytester, "-p", PLUGIN, f"--basetemp={existing}")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*--basetemp=*existing already exists*"])
+    assert precious.read_text() == "keep me"
+
+
+@not_built
+def test_new_basetemp_is_created_and_never_pruned(pytester: pytest.Pytester) -> None:
+    base = pytester.path / "new"
+    Root(base)  # fail here, not in the child, while the core is a stub
+    pytester.makeini(
+        "[pytest]\ntmp_path_retention_policy = none\ntmp_path_retention_count = 0\n"
+    )
+    pytester.makepyfile("def test_passes(tmp_path): (tmp_path / 'f').touch()")
+    _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=1)
+    assert list(base.rglob("f"))
+
+
+@not_built
+def test_xdist_workers_accept_the_new_basetemp(pytester: pytest.Pytester) -> None:
+    pytest.importorskip("xdist")
+    base = pytester.path / "new"
+    Root(base)  # fail here, not in the child, while the core is a stub
+    pytester.makepyfile("def test_one(tmp_path): pass\ndef test_two(tmp_path): pass")
+    result = _run(pytester, "-p", PLUGIN, f"--basetemp={base}", "-n", "2")
+    result.assert_outcomes(passed=2)

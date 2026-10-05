@@ -42,14 +42,16 @@ class Retention:
 
     ``keep_failed_only`` removes an item's folder when its whole outcome
     passed. ``keep_runs`` and ``max_age`` bound the runs kept per root.
+    ``KEEP_EVERYTHING`` deletes nothing at all.
     """
 
     keep_failed_only: bool = False
-    keep_runs: int = 3
+    keep_runs: int | None = 3  # None: no limit
     max_age: float | None = None
 
 
 _DEFAULT_RETENTION = Retention()
+KEEP_EVERYTHING = Retention(keep_failed_only=False, keep_runs=None)
 
 
 @dataclass(frozen=True)
