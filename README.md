@@ -25,3 +25,9 @@ addopts = -p cot.tmppath.overtake_pytest
 ```
 
 How and why is in [docs/pytest-replacement.md](docs/pytest-replacement.md).
+
+Old runs can be removed by hand; it lists them and asks before removing:
+
+```bash
+python -m cot.tmppath prune --all-projects --older-than 7d
+```

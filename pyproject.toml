@@ -29,6 +29,7 @@ dynamic = [ "version" ]
 # dependencies as wheels during bootstrap (docs/goals.md, G6)
 dependencies = [ ]
 urls.Source = "https://github.com/cogs-of-testing/cot.tmppath"
+scripts.cot-tmppath = "cot.tmppath.__main__:main"
 
 [dependency-groups]
 dev = [ { include-group = "lint" }, { include-group = "test" } ]

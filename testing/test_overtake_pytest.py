@@ -227,3 +227,28 @@ def test_tmpdir_factory_returns_legacy_paths(pytester: pytest.Pytester) -> None:
         """
     )
     _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=1)
+
+
+@not_built
+def test_getbasetemp_is_per_process_and_its_parent_is_the_run(
+    pytester: pytest.Pytester,
+) -> None:
+    pytest.importorskip("xdist")
+    base = pytester.path / "new"
+    Root(base)  # fail here, not in the child, while the core is a stub
+    pytester.makepyfile(
+        """
+        import os
+        import pytest
+
+        @pytest.mark.parametrize("n", range(4))
+        def test_base(tmp_path_factory, n):
+            base = tmp_path_factory.getbasetemp()
+            assert base.name == os.environ["PYTEST_XDIST_WORKER"]
+            (base.parent / f"shared-{n}").touch()
+        """
+    )
+    result = _run(pytester, "-p", PLUGIN, f"--basetemp={base}", "-n", "2")
+    result.assert_outcomes(passed=4)
+    (run,) = [p for p in base.iterdir() if p.is_dir()]
+    assert len(list(run.glob("shared-*"))) == 4

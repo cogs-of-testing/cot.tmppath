@@ -61,6 +61,13 @@ The starting point is deliberately simple:
 - **run** is one invocation. Several processes can join the same run
   (xdist-style workers, runsomewhere workers) and share its folder. That
   replaces the `getbasetemp().parent` convention.
+- **process folders** (`Run.process_folder(name)`) give each process of a
+  run its own folder directly in the run. The manager of the processes
+  picks the names (the xdist controller names `gw0`, `gw1`, ...), never the
+  processes themselves.
+- **The default root is per user:** `{temproot}/cot.tmppath-{user}/{project}`,
+  with a private, owner-checked user folder, so another user cannot block or
+  read a project's runs by creating its folder first.
 - **item** folders sit directly in the run folder, side by side, whatever
   the item is: a test, a module fixture's data, a worker's scratch, a staging
   area. Grouping is expressed in the item's name, not in extra levels.

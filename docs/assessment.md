@@ -38,7 +38,8 @@ pytest-xdist 3.8. **(verified)** means it was run, not read.
 
 These are not covered by any test and not decided in `goals.md`:
 
-1. **No per-user part in the default root.** `Root.for_project(project)`
+1. **No per-user part in the default root** (decided: added, as
+   `{temproot}/cot.tmppath-{user}/{project}`, see goals G2). `Root.for_project(project)`
    puts the root under the system temp folder by project name alone. On a
    shared `/tmp`, user B pre-creating `/tmp/<project>` makes user A's runs
    fail the ownership check: the same denial of service pytest accepts for
@@ -100,14 +101,14 @@ Plugin compatibility, checked against pytest's `tmpdir.py` and
 | `PYTEST_DEBUG_TEMPROOT` overrides the temp root | ignored | **fixed today** |
 | retention ini values validated, error on bad value | `UsageError` | ok |
 | `mktemp(name, numbered=False)` creates exactly `name`, fails if it exists | always unique name | **open**: breaks code that relies on the exact name |
-| `getbasetemp()` is per process; under xdist `getbasetemp().parent` is the shared run folder | returns the shared run folder in every process | **open**: `getbasetemp().parent` now points at the project root, shared with *other runs*; the xdist `FileLock` recipe would cross runs |
+| `getbasetemp()` is per process; under xdist `getbasetemp().parent` is the shared run folder | the process's own folder, named by the controller | **fixed**: `getbasetemp().parent` is the run |
 | `mktemp` rejects absolute and non-normalised names (#5686) | passed to `Run.item`, which flattens them | **open**: decide whether to reject like pytest |
 | `tmp_path` is a resolved real path (#4653) | depends on the core | open, add to the core tests |
 | test folder names truncated to 30 characters | full sanitized name, the core shortens to at most 64 | intended |
 
-The `getbasetemp()` difference is the most likely to break real suites.
-Returning a per-process folder inside the run (for example `run/gw0`) would
-keep `getbasetemp().parent` meaning "the run" as it does with pytest today.
+`getbasetemp()` now returns a per-process folder inside the run, named by
+the manager (`Run.process_folder`), so `getbasetemp().parent` means "the
+run" as it does with pytest under xdist.
 
 ## 3. Do we need a cleanup command?
 
@@ -126,18 +127,27 @@ same: it runs when a run closes, per project. So nothing ever removes:
 
 `Root.prune()` already exists in the API, so a command is a thin wrapper.
 
-**Recommendation: yes, small.**
+**Decided: yes, small.** Built as `python -m cot.tmppath prune` (also the
+`cot-tmppath` script):
 
 ```text
-python -m cot.tmppath prune [ROOT] [--all-projects] [--older-than 7d] [--dry-run]
+python -m cot.tmppath prune [ROOT ...] [--all-projects] [--older-than 7d]
+                            [--dry-run | --delete-without-asking-i-have-read-the-dry-run]
 ```
+
+- By default it lists what it would remove and asks; only typing `yes`
+  removes anything. Without a terminal to ask on, it refuses.
+- `--dry-run` only lists.
+- Removing without asking takes a flag that is long on purpose, and
+  argparse abbreviations are off, so `--delete` does not expand to it
+  **(verified: argparse accepts such prefixes by default)**.
+- It removes exactly the listed folders, each checked again first
+  (`PrunePlan.apply`).
 
 - It applies exactly the library's rules: only folders carrying our marker,
   owned by the current user, whose lock owner is dead; never anything else.
 - `--all-projects` walks every project root under the user's default
   location, which is the case retention cannot reach.
-- `--dry-run` lists what would go. The question is whether dry-run should be
-  the default.
 - runsomewhere can call `Root.prune` directly over its own connection; the
   command is for people and cron.
 - A pytest option (`--tmp-prune`) is not needed: the plugin prunes the

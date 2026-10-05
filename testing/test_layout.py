@@ -49,3 +49,17 @@ def test_pytest_layout_is_an_example_policy(root_path: Path) -> None:
     with Root(root_path, layout=PytestLayout()).start_run() as run:
         assert re.fullmatch(r"pytest-\d+", run.path.name)
         assert re.fullmatch(r"test_x\d+", run.item("test_x").name)
+
+
+def test_process_folders_use_the_managers_name(root_path: Path) -> None:
+    with Root(root_path).start_run() as run:
+        first = run.process_folder("gw0")
+        assert first == run.path / "gw0"
+        assert run.process_folder("gw0") == first
+
+
+def test_default_root_has_a_private_per_user_folder(tmp_path: Path) -> None:
+    with Root.for_project("demo", temproot=tmp_path).start_run() as run:
+        (user_folder,) = tmp_path.iterdir()
+        assert user_folder.name.startswith("cot.tmppath-")
+        assert run.path.parent == user_folder / "demo"

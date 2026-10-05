@@ -33,6 +33,7 @@ from ._api import KEEP_EVERYTHING, Outcome, Retention, Root, Run
 
 _RUN_ID = "cot_tmppath_run"
 _ROOT = "cot_tmppath_root"
+_PROCESS = "cot_tmppath_process"
 _item_path = pytest.StashKey[Path]()
 _item_failed = pytest.StashKey[bool]()
 _state = pytest.StashKey["_State"]()
@@ -96,6 +97,11 @@ class _State:
             temproot=Path(temproot) if temproot else None,
             retention=retention,
         )
+
+    @property
+    def process(self) -> str:
+        worker = getattr(self._config, "workerinput", None)
+        return str(worker[_PROCESS]) if worker is not None else "main"
 
     @property
     def run(self) -> Run:
@@ -170,6 +176,8 @@ def pytest_configure_node(node: Any) -> None:
     run = node.config.stash[_state].run
     node.workerinput[_ROOT] = str(run.path.parent)
     node.workerinput[_RUN_ID] = run.id
+    # the manager names each process's folder, workers never pick their own
+    node.workerinput[_PROCESS] = node.gateway.id
 
 
 class TempPathFactory:
@@ -183,7 +191,9 @@ class TempPathFactory:
         self._state = state
 
     def getbasetemp(self) -> Path:
-        return self._state.run.path
+        # per process, so getbasetemp().parent is the run's shared folder,
+        # as it is for pytest under xdist
+        return self._state.run.process_folder(self._state.process)
 
     def mktemp(self, basename: str, numbered: bool = True) -> Path:
         # Every item gets a unique name; numbered=False cannot promise the

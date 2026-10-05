@@ -62,6 +62,21 @@ class PruneReport:
     failed: tuple[tuple[Path, str], ...] = field(default=())
 
 
+@dataclass(frozen=True)
+class PrunePlan:
+    """Runs a prune selected, to show before anything is removed."""
+
+    paths: tuple[Path, ...] = ()
+
+    def apply(self) -> PruneReport:
+        """Remove exactly the planned paths that are still safe to remove.
+
+        Each one is checked again (marker, owner, owner dead), so a run that
+        came alive since the plan was made is skipped and reported.
+        """
+        raise NotImplementedError(_NOT_BUILT)
+
+
 class Layout(Protocol):
     """Where runs and items go below a root. Layouts are policies."""
 
@@ -98,6 +113,16 @@ class Run:
 
     def item(self, name: str) -> Path:
         """Create a new folder for ``name`` directly in the run folder."""
+        raise NotImplementedError(_NOT_BUILT)
+
+    def process_folder(self, name: str) -> Path:
+        """The folder of one process in this run, named by whoever manages
+        the processes (for pytest-xdist, the controller names its workers).
+
+        Unlike ``item``, the name is used exactly, and asking twice gives the
+        same folder. This is what ``getbasetemp()`` returns under pytest, so
+        ``getbasetemp().parent`` stays the run's shared folder.
+        """
         raise NotImplementedError(_NOT_BUILT)
 
     def finish_item(self, path: Path, outcome: Outcome) -> None:
@@ -145,7 +170,11 @@ class Root:
     ) -> Root:
         """The default root for ``project`` under the system temp folder.
 
-        Touches nothing on disk until the first run starts.
+        The root is ``{temproot}/cot.tmppath-{user}/{project}``, with the
+        user as the uid on POSIX and the user name on Windows. The per-user
+        folder is private and owner-checked, so another user cannot block or
+        read a project's runs by creating its folder first. Touches nothing
+        on disk until the first run starts.
         """
         raise NotImplementedError(_NOT_BUILT)
 
@@ -157,7 +186,20 @@ class Root:
         """Join a run another process started, sharing its folder."""
         raise NotImplementedError(_NOT_BUILT)
 
+    @classmethod
+    def all_projects(cls, *, temproot: Path | None = None) -> tuple[Root, ...]:
+        """Every project root of the current user under the default location."""
+        raise NotImplementedError(_NOT_BUILT)
+
+    def plan_prune(self, *, older_than: float | None = None) -> PrunePlan:
+        """What a prune would remove, without removing anything.
+
+        ``older_than`` (seconds) also selects runs unused for that long,
+        whatever retention says. Live runs are never selected.
+        """
+        raise NotImplementedError(_NOT_BUILT)
+
     def prune(self) -> PruneReport:
         """Remove runs that retention no longer keeps and whose owners are
-        gone."""
+        gone: ``plan_prune().apply()``."""
         raise NotImplementedError(_NOT_BUILT)
