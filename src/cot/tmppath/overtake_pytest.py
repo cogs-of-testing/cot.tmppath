@@ -17,7 +17,9 @@ This module imports pytest; the rest of cot.tmppath never does.
 
 from __future__ import annotations
 
+import os
 import re
+import stat
 import time
 import warnings
 from collections.abc import Generator
@@ -88,7 +90,12 @@ class _State:
         if basetemp:
             # a folder the user named is never pruned, whatever retention says
             return Root(Path(basetemp), retention=KEEP_EVERYTHING)
-        return Root.for_project(self._config.rootpath.name, retention=retention)
+        temproot = os.environ.get("PYTEST_DEBUG_TEMPROOT")
+        return Root.for_project(
+            self._config.rootpath.name,
+            temproot=Path(temproot) if temproot else None,
+            retention=retention,
+        )
 
     @property
     def run(self) -> Run:
@@ -123,12 +130,17 @@ def _check_basetemp(config: pytest.Config) -> None:
     if not basetemp or hasattr(config, "workerinput"):
         return
     path = Path(basetemp)
-    if not path.exists():
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
         return
+    # lstat, never stat: a symlink to a fresh empty folder is not fresh
+    owned = not hasattr(os, "getuid") or info.st_uid == os.getuid()
     fresh = (
-        path.is_dir()
+        stat.S_ISDIR(info.st_mode)
+        and owned
+        and time.time() - info.st_mtime < _FRESH_SECONDS
         and not any(path.iterdir())
-        and time.time() - path.stat().st_mtime < _FRESH_SECONDS
     )
     if fresh:
         config.issue_config_time_warning(
@@ -161,7 +173,7 @@ def pytest_configure_node(node: Any) -> None:
 
 
 class TempPathFactory:
-    """What ``tmp_path_factory`` and ``tmpdir_factory`` return.
+    """What ``tmp_path_factory`` returns.
 
     It offers the part of pytest's factory that pytester, plugins and
     conftests use: ``mktemp`` and ``getbasetemp``.
@@ -184,9 +196,22 @@ def tmp_path_factory(request: pytest.FixtureRequest) -> TempPathFactory:
     return TempPathFactory(request.config.stash[_state])
 
 
+class TempdirFactory:
+    """What ``tmpdir_factory`` returns: the same, with ``py.path`` results."""
+
+    def __init__(self, factory: TempPathFactory) -> None:
+        self._factory = factory
+
+    def getbasetemp(self) -> Any:
+        return legacy_path(self._factory.getbasetemp())
+
+    def mktemp(self, basename: str, numbered: bool = True) -> Any:
+        return legacy_path(self._factory.mktemp(basename, numbered))
+
+
 @pytest.fixture(scope="session")
-def tmpdir_factory(tmp_path_factory: TempPathFactory) -> TempPathFactory:
-    return tmp_path_factory
+def tmpdir_factory(tmp_path_factory: TempPathFactory) -> TempdirFactory:
+    return TempdirFactory(tmp_path_factory)
 
 
 @pytest.fixture

@@ -36,7 +36,7 @@ def test_addopts_opt_in_takes_over(pytester: pytest.Pytester) -> None:
             assert not config.pluginmanager.has_plugin("tmpdir")
             assert not hasattr(config, "_tmp_path_factory")
             assert type(tmp_path_factory).__module__ == {PLUGIN!r}
-            assert tmpdir_factory is tmp_path_factory
+            assert type(tmpdir_factory).__module__ == {PLUGIN!r}
         """
     )
     _run(pytester).assert_outcomes(passed=1)
@@ -199,3 +199,31 @@ def test_pytesters_own_subprocess_runs_work_with_a_warning(
     pytester.makepyfile("def test_nothing(): pass")
     result = pytester.runpytest_subprocess("-p", "no:cacheprovider", "-p", PLUGIN)
     result.assert_outcomes(passed=1, warnings=1)
+
+
+def test_symlink_to_a_fresh_empty_folder_is_refused(pytester: pytest.Pytester) -> None:
+    target = pytester.mkdir("target")
+    link = pytester.path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("cannot create symlinks here")
+    pytester.makepyfile("def test_nothing(): pass")
+    result = _run(pytester, "-p", PLUGIN, f"--basetemp={link}")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+
+
+@not_built
+def test_tmpdir_factory_returns_legacy_paths(pytester: pytest.Pytester) -> None:
+    base = pytester.path / "new"
+    Root(base)  # fail here, not in the child, while the core is a stub
+    pytester.makepyfile(
+        """
+        from _pytest.compat import LEGACY_PATH
+
+        def test_legacy(tmpdir_factory):
+            assert isinstance(tmpdir_factory.mktemp("x"), LEGACY_PATH)
+            assert isinstance(tmpdir_factory.getbasetemp(), LEGACY_PATH)
+        """
+    )
+    _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=1)
