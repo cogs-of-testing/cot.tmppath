@@ -152,7 +152,7 @@ Time is a goal, not an afterthought, and it is measured.
 
 ## Open questions
 
-1. **Network filesystems (open, needs research).** The leaning is to refuse
+1. **Network filesystems (deferred).** Research is deferred. The leaning is to refuse
    a root on a network filesystem by default and allow it only by explicit
    opt-in. Before deciding, research which guarantees break there (locking,
    rename atomicity, ownership and permissions over NFS, SMB and container
