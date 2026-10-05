@@ -131,12 +131,16 @@ above:
 - Without `--basetemp`, the root is `Root.for_project(rootdir name)`, and
   pytest's retention settings map onto `Retention`: `failed` keeps only
   failed items, `none` keeps no runs.
-- **pytester caveat (verified):** `pytester.runpytest_subprocess` always
-  passes a `--basetemp` folder it has already created, and `runpytest`
-  passes one that exists from the second call in a test on. A test that runs
-  an inner pytest with the takeover therefore gets the usage error. Such
-  tests must pass their own new `--basetemp` (the last one given wins) or
-  run pytest through `pytester.run`. This repository's tests do the latter.
+- **An existing folder that is empty and less than 10 seconds old** is used
+  with a `PytestWarning` instead of refused: it was made for this run by
+  whoever started pytest, and holds nothing to lose. This is what
+  `pytester.runpytest_subprocess` does: it always creates the `--basetemp`
+  folder just before starting pytest **(verified)**.
+- **Intentional break:** `pytester.runpytest` passes the same `--basetemp`
+  on every call in a test, so from the second call on the folder is neither
+  empty nor fresh and the run is refused. Tests that rely on that, and any
+  other caller that reuses a `--basetemp`, break on purpose; they must pass
+  a new path.
 - xdist workers get the root and run id through `pytest_configure_node` and
   join the controller's run.
 - An item's fate is decided at its `teardown` report from setup, call and

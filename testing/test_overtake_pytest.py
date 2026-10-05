@@ -7,7 +7,9 @@ behaviour tests are xfail until the core is built.
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 
 import pytest
 
@@ -172,3 +174,28 @@ def test_xdist_workers_accept_the_new_basetemp(pytester: pytest.Pytester) -> Non
     pytester.makepyfile("def test_one(tmp_path): pass\ndef test_two(tmp_path): pass")
     result = _run(pytester, "-p", PLUGIN, f"--basetemp={base}", "-n", "2")
     result.assert_outcomes(passed=2)
+
+
+def test_fresh_empty_basetemp_is_used_with_a_warning(pytester: pytest.Pytester) -> None:
+    fresh = pytester.mkdir("fresh")
+    pytester.makepyfile("def test_nothing(): pass")
+    result = _run(pytester, "-p", PLUGIN, f"--basetemp={fresh}")
+    result.assert_outcomes(passed=1, warnings=1)
+    result.stdout.fnmatch_lines(["*--basetemp=*fresh already exists; using it*"])
+
+
+def test_old_empty_basetemp_is_refused(pytester: pytest.Pytester) -> None:
+    old = pytester.mkdir("old")
+    an_hour_ago = time.time() - 3600
+    os.utime(old, (an_hour_ago, an_hour_ago))
+    pytester.makepyfile("def test_nothing(): pass")
+    result = _run(pytester, "-p", PLUGIN, f"--basetemp={old}")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+
+
+def test_pytesters_own_subprocess_runs_work_with_a_warning(
+    pytester: pytest.Pytester,
+) -> None:
+    pytester.makepyfile("def test_nothing(): pass")
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider", "-p", PLUGIN)
+    result.assert_outcomes(passed=1, warnings=1)
