@@ -18,9 +18,11 @@ by policy. Long-lived workspaces and caches are out of scope.
 
 It has two first users, and neither of them is privileged in the core:
 
-- **Test runners.** A pytest binding offers what `tmp_path`,
-  `tmp_path_factory` and `--basetemp` offer today, without the problems listed
-  in the research.
+- **Test runners.** There is no pytest binding in this project. Instead,
+  pytest can run with its `tmp_path`, `tmp_path_factory`, `tmpdir` and
+  `tmpdir_factory` fixtures replaced by ones backed by cot.tmppath, without
+  the problems listed in the research
+  ([pytest-replacement.md](pytest-replacement.md)).
 - **cot.runsomewhere.** Workers on a target need scratch and staging folders
   while bootstrapping and deploying: wheels being received before they move
   into runsomewhere's own cache, per-worker scratch space. These folders must
@@ -119,8 +121,9 @@ Time is a goal, not an afterthought, and it is measured.
 
 ### G6. A core with no host
 
-- The core imports no test runner and knows no host. pytest is a binding, in
-  the same split as cot.config.ingest. runsomewhere uses the core directly.
+- The core imports no test runner and knows no host. pytest runs with its
+  tmp fixtures replaced (G1 to G5 apply there too), and runsomewhere uses the
+  core directly.
 - **Pure Python, no runtime dependencies.** runsomewhere ships its runtime
   dependencies as wheels during bootstrap and requires them to be pure
   Python, so this is a hard constraint, not a preference.
@@ -142,8 +145,9 @@ Time is a goal, not an afterthought, and it is measured.
 
 ## How we will know it works
 
-- The pytest binding passes a port of pytest's own `testing/test_tmpdir.py`,
-  with the cases the research lists as wrong changed to the new behaviour.
+- pytest, with its tmp fixtures replaced, passes a port of pytest's own
+  `testing/test_tmpdir.py`, with the cases the research lists as wrong
+  changed to the new behaviour.
 - Attack tests cover a planted symlink, a foreign-owned root, a world-writable
   root and a pre-existing non-marked `--basetemp`.
 - The benchmarks beat pytest's `tmp_path` on every scenario in G3.

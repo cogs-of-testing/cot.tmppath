@@ -13,4 +13,8 @@ states the goals as tests, marked xfail until each behaviour lands.
 ```bash
 uv run pytest -q
 uv run mypy
+uv run --group bench pytest benchmarks
 ```
+
+There is no pytest binding. How pytest runs with its tmp fixtures replaced
+is in [docs/pytest-replacement.md](docs/pytest-replacement.md).

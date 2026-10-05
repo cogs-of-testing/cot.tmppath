@@ -30,7 +30,8 @@ urls.Source = "https://github.com/cogs-of-testing/cot.tmppath"
 
 [dependency-groups]
 dev = [ { include-group = "lint" }, { include-group = "test" } ]
-test = [ "pytest>=8" ]
+test = [ "pytest>=8", "pytest-xdist>=3" ]
+bench = [ "pytest-benchmark>=5" ]
 lint = [ "mypy>=1.15" ]
 
 [tool.hatch]
