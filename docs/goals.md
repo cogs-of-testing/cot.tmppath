@@ -8,10 +8,13 @@ decision. The background is in [research.md](research.md).
 ## What cot.tmppath is
 
 A hardened building block for **creating, finding and cleaning up related
-temporary folders**. You ask for a folder in a tree of related folders
-(a run, a group inside it, one item), and the library makes it safely, names
-it predictably, keeps or removes it by policy, and copes with other
-processes doing the same thing at the same time.
+temporary folders**. Each run gets its own folder, and everything the run
+needs lives directly inside it. The library makes those folders safely,
+names them predictably, keeps or removes them by policy, and copes with
+other processes doing the same thing at the same time.
+
+Everything it manages is **temporary**: it belongs to a run and goes away
+by policy. Long-lived workspaces and caches are out of scope.
 
 It has two first users, and neither of them is privileged in the core:
 
@@ -19,10 +22,10 @@ It has two first users, and neither of them is privileged in the core:
   `tmp_path_factory` and `--basetemp` offer today, without the problems listed
   in the research.
 - **cot.runsomewhere.** Workers on a target need scratch and staging folders
-  while bootstrapping and deploying: wheels being received, environments
-  being built, per-worker scratch space. These folders must work on machines
-  runsomewhere has never seen, under users it does not control, and survive
-  crashes of the process that made them.
+  while bootstrapping and deploying: wheels being received before they move
+  into runsomewhere's own cache, per-worker scratch space. These folders must
+  work on machines runsomewhere has never seen, under users it does not
+  control, and be cleaned up after a crash of the process that made them.
 
 ## Goals
 
@@ -33,9 +36,9 @@ with no setting needed.
 
 - Folders are private (0o700) and owned by the current user. The library
   checks this and does not just assume it.
-- At the predictable, shared levels of the tree, it never follows a symlink.
-  It works through directory file descriptors (`dir_fd`, `O_NOFOLLOW`) where
-  the platform has them, so a path that is checked is the path that gets used.
+- At the predictable, shared levels, it never follows a symlink. It works
+  through directory file descriptors (`dir_fd`, `O_NOFOLLOW`) where the
+  platform has them, so a path that is checked is the path that gets used.
   This covers the class of attack behind
   [CVE-2025-71176](https://github.com/pytest-dev/pytest/issues/14343) and
   [#8414](https://github.com/pytest-dev/pytest/issues/8414).
@@ -45,26 +48,28 @@ with no setting needed.
 - A planted directory or a hostile pre-existing root is an error that names
   the path and the fix. It is never silently reused.
 
-### G2. Related folders, one model
+### G2. One folder per run, flat inside
 
-One tree with named levels instead of a flat base dir plus `mktemp`:
+The starting point is deliberately simple:
 
 ```text
-root  ─►  project  ─►  run  ─►  group  ─►  item
+{root}/{run}/{item}
 ```
 
-- **project** keeps one project's runs apart from another's, so retention
-  never deletes another project's runs (in pytest today, every project
-  shares one `pytest-of-{user}` counter).
 - **run** is one invocation. Several processes can join the same run
-  (xdist-style workers, runsomewhere workers), and the run has a first-class
-  shared folder. That replaces the `getbasetemp().parent` convention.
-- **group** and **item** are what a host maps its scopes onto: a module and
-  a test for pytest, a deployment and a worker for runsomewhere.
-- Names are stable and readable, derived from what the caller names, and
-  unique without scanning the directory (see G3). Over-long names are
-  shortened deterministically, so the same item gets the same name in every
-  run.
+  (xdist-style workers, runsomewhere workers) and share its folder. That
+  replaces the `getbasetemp().parent` convention.
+- **item** folders sit directly in the run folder, side by side, whatever
+  the item is: a test, a module fixture's data, a worker's scratch, a staging
+  area. Grouping is expressed in the item's name, not in extra levels.
+- Depth stays fixed and short, because every extra level eats into
+  Windows' 260-character path limit before a test writes anything.
+- Names are readable, derived from what the caller names, and unique without
+  scanning the directory (see G3). Over-long names are shortened
+  deterministically, so the same item gets the same name in every run.
+- **Layouts are policies.** The default is the flat layout above. pytest's
+  `pytest-of-{user}/pytest-{N}/{testname}{M}` layout is shipped as an
+  example policy, which also shows how a host plugs in its own.
 
 ### G3. Faster than pytest's implementation
 
@@ -93,23 +98,24 @@ Time is a goal, not an afterthought, and it is measured.
   which today discards the folders of tests that error in setup or teardown.
 - Retention works with any root, including a custom one, which `--basetemp`
   cannot do ([#10829](https://github.com/pytest-dev/pytest/issues/10829)).
-- Policies cover count and age, so runsomewhere can prune workspaces unused
-  for a given time.
+- Retention is kept per project, so one project's runs never push out
+  another's (in pytest today, every project shares one `pytest-of-{user}`
+  counter).
+- Policies cover run count and age.
 - A folder that could not be removed is reported as a result the caller can
   read, never swallowed.
 
 ### G5. Concurrency- and crash-safe
 
-- Any number of processes, on one host or sharing a filesystem, can create,
-  join and prune runs at the same time without corrupting or deleting each
-  other's live folders.
-- A folder's liveness comes from a lock tied to its owner (pid, host and boot
-  identity), so a crashed owner's folders become collectable as soon as it is
+- Any number of processes on one host can create, join and prune runs at
+  the same time without corrupting or deleting each other's live folders.
+- A run's liveness comes from a lock tied to its owner (pid, host and boot
+  identity), so a crashed owner's run becomes collectable as soon as it is
   known to be dead. pytest instead waits three days, or deletes a long run
   that is still alive.
-- It provides **atomic placement**: write under a temporary name in the same
-  folder, then rename into place. runsomewhere's wheel cache and file
-  transfer need exactly this, and today each would write it again.
+- It provides **atomic placement**: write under a temporary name in a
+  managed folder, then rename into the destination. runsomewhere's wheel
+  transfer needs exactly this, and today it would write it again.
 
 ### G6. A core with no host
 
@@ -126,14 +132,13 @@ Time is a goal, not an afterthought, and it is measured.
 
 ## Non-goals
 
+- Long-lived folders: runsomewhere's workspaces, wheel and interpreter
+  caches stay runsomewhere's own.
 - Single temporary files. `tempfile` already does that well, and the library
   only places files atomically inside folders it manages.
 - Secure erasure of data on deletion.
 - The shell-only "no Python at all" bootstrap rung in runsomewhere, which
   runs before any Python exists.
-- Guarantees on network filesystems where locking or rename atomicity is
-  unreliable. Such a root is detected where possible and reported, not
-  supported. **(open)**
 
 ## How we will know it works
 
@@ -142,16 +147,13 @@ Time is a goal, not an afterthought, and it is measured.
 - Attack tests cover a planted symlink, a foreign-owned root, a world-writable
   root and a pre-existing non-marked `--basetemp`.
 - The benchmarks beat pytest's `tmp_path` on every scenario in G3.
-- runsomewhere's bootstrap cache, transfer staging and workspaces use it,
-  with no temporary-folder code of their own.
+- runsomewhere's bootstrap staging and worker scratch use it, with no
+  temporary-folder code of their own.
 
 ## Open questions
 
-1. **Persistent folders.** Should cot.tmppath also own runsomewhere's
-   long-lived workspaces and caches (`XDG_DATA_HOME`, `XDG_CACHE_HOME`, prune
-   by unused time), or only folders that are temporary by nature?
-2. **pytest layout compatibility.** Keep `pytest-of-{user}/pytest-{N}` so
-   existing `getbasetemp().parent` users and xdist keep working, or use the
-   new layout and give xdist the shared run folder instead?
-3. **Network filesystems.** Refuse them, warn, or support them with weaker
-   guarantees?
+1. **Network filesystems (open, needs research).** The leaning is to refuse
+   a root on a network filesystem by default and allow it only by explicit
+   opt-in. Before deciding, research which guarantees break there (locking,
+   rename atomicity, ownership and permissions over NFS, SMB and container
+   bind mounts) and how reliably such a root can be detected on each platform.
