@@ -1,0 +1,64 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatch-vcs", "hatchling" ]
+
+[project]
+name = "cot.tmppath"
+description = "Hardened, fast management of related temporary folders"
+readme = "README.md"
+authors = [
+  { name = "Ronny Pfannschmidt", email = "opensource@ronnypfannschmidt.de" },
+]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Framework :: Pytest",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+dynamic = [ "version" ]
+# pure Python and no runtime dependencies: cot.runsomewhere ships its
+# dependencies as wheels during bootstrap (docs/goals.md, G6)
+dependencies = [ ]
+urls.Source = "https://github.com/cogs-of-testing/cot.tmppath"
+
+[dependency-groups]
+dev = [ { include-group = "lint" }, { include-group = "test" } ]
+test = [ "pytest>=8" ]
+lint = [ "mypy>=1.15" ]
+
+[tool.hatch]
+version.source = "vcs"
+version.raw-options.fallback_version = "0.0.0"
+build.targets.wheel.packages = [ "src/cot" ]
+
+[tool.uv]
+default-groups = [ "dev" ]
+
+[tool.ruff]
+line-length = 88
+src = [ "src", "testing" ]
+lint.extend-select = [ "B", "C4", "I", "PT", "PTH", "RUF", "SIM", "UP" ]
+lint.isort.known-first-party = [ "cot" ]
+
+[tool.pytest]
+ini_options.minversion = "8"
+ini_options.addopts = [ "-ra", "--strict-config", "--strict-markers" ]
+ini_options.testpaths = [ "testing" ]
+ini_options.xfail_strict = true
+ini_options.filterwarnings = [ "error" ]
+
+[tool.mypy]
+python_version = "3.10"
+files = [ "src" ]
+mypy_path = "src"
+explicit_package_bases = true
+strict = true
+warn_unreachable = true
+enable_error_code = [ "ignore-without-code", "redundant-expr", "truthy-bool" ]

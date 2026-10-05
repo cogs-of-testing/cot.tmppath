@@ -1,0 +1,51 @@
+"""G2: one folder per run, flat inside; layouts are policies."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from conftest import not_built
+from cot.tmppath import PytestLayout, Root
+
+pytestmark = not_built
+
+
+def test_items_sit_directly_in_the_run_folder(root_path: Path) -> None:
+    with Root(root_path).start_run() as run:
+        assert run.path.parent == root_path
+        assert run.item("test_one").parent == run.path
+        assert run.item("module/fixture").parent == run.path
+
+
+def test_item_names_are_readable(root_path: Path) -> None:
+    with Root(root_path).start_run() as run:
+        assert run.item("test_foo[a-b]").name.startswith("test_foo")
+
+
+def test_same_name_gets_distinct_folders(root_path: Path) -> None:
+    with Root(root_path).start_run() as run:
+        first, second = run.item("test_x"), run.item("test_x")
+        assert first != second
+        assert first.is_dir()
+        assert second.is_dir()
+
+
+def test_long_names_are_shortened_deterministically(root_path: Path) -> None:
+    long_a = "test_" + "a" * 300 + "[param-1]"
+    long_b = "test_" + "a" * 300 + "[param-2]"
+    root = Root(root_path)
+    with root.start_run() as first_run:
+        first = first_run.item(long_a)
+        other = first_run.item(long_b)
+    with root.start_run() as second_run:
+        again = second_run.item(long_a)
+    assert len(first.name) <= 64
+    assert first.name != other.name
+    assert first.name == again.name
+
+
+def test_pytest_layout_is_an_example_policy(root_path: Path) -> None:
+    with Root(root_path, layout=PytestLayout()).start_run() as run:
+        assert re.fullmatch(r"pytest-\d+", run.path.name)
+        assert re.fullmatch(r"test_x\d+", run.item("test_x").name)
