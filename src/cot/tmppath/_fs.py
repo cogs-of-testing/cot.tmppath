@@ -15,7 +15,10 @@ import stat
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 #: whether directory descriptors back the handles on this platform
 USE_FD = (
@@ -89,7 +92,7 @@ class Dir:
             os.close(self._fd)
             self._fd = None
 
-    def __enter__(self) -> Dir:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -198,10 +201,8 @@ class Dir:
             # writable once and retried
             if isinstance(error, PermissionError):
                 try:
-                    os.chmod(path, stat.S_IRWXU)
-                    parent = os.path.dirname(path)
-                    if parent:
-                        os.chmod(parent, stat.S_IRWXU)
+                    Path(path).chmod(stat.S_IRWXU)
+                    Path(path).parent.chmod(stat.S_IRWXU)
                     func(path)
                 except OSError as again:
                     failures.append(f"{path}: {again}")
@@ -215,10 +216,9 @@ class Dir:
             kwargs["onexc"] = handle
         else:
             kwargs["onerror"] = lambda f, p, info: handle(f, p, info[1])
-        if self._fd is not None and sys.version_info >= (3, 11):
-            shutil.rmtree(name, dir_fd=self._fd, **kwargs)
-        else:
-            shutil.rmtree(self.path / name, **kwargs)
+        # by path, so the handler can retry with absolute paths; rmtree
+        # itself never follows symlinks inside the tree on Linux and macOS
+        shutil.rmtree(self.path / name, **kwargs)
         if failures:
             return failures[0]
         if self.is_dir(name):
@@ -231,7 +231,8 @@ def _open_dir(name: str, dir_fd: int) -> int:
         return os.open(name, _DIR_FLAGS, dir_fd=dir_fd)
     except OSError as error:
         if error.errno in (errno.ELOOP, errno.ENOTDIR):
-            raise NotADirectoryHere(error.errno, "a symlink or not a directory", name)
+            msg = "a symlink or not a directory"
+            raise NotADirectoryHere(error.errno, msg, name) from None
         raise
 
 

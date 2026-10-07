@@ -32,7 +32,9 @@ class Owner:
         return cls(os.getpid(), socket.gethostname(), _BOOT)
 
     def to_bytes(self) -> bytes:
-        return json.dumps({"pid": self.pid, "host": self.host, "boot": self.boot}).encode()
+        return json.dumps(
+            {"pid": self.pid, "host": self.host, "boot": self.boot}
+        ).encode()
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Owner | None:
