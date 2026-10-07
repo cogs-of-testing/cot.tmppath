@@ -16,8 +16,9 @@ uv run mypy
 uv run --group bench pytest benchmarks
 ```
 
-pytest projects can opt in to having pytest's `tmp_path`, `tmp_path_factory`,
-`tmpdir` and `tmpdir_factory` replaced:
+pytest projects can opt in to having pytest's `tmp_path` and
+`tmp_path_factory` replaced. The `py.path` fixtures `tmpdir` and
+`tmpdir_factory` are not provided:
 
 ```ini
 [pytest]

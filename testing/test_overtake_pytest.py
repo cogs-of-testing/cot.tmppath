@@ -31,15 +31,24 @@ def test_addopts_opt_in_takes_over(pytester: pytest.Pytester) -> None:
     pytester.makeini(f"[pytest]\naddopts = -p {PLUGIN}\n")
     pytester.makepyfile(
         f"""
-        def test_takeover(request, tmp_path_factory, tmpdir_factory):
+        def test_takeover(request, tmp_path_factory):
             config = request.config
             assert not config.pluginmanager.has_plugin("tmpdir")
             assert not hasattr(config, "_tmp_path_factory")
             assert type(tmp_path_factory).__module__ == {PLUGIN!r}
-            assert type(tmpdir_factory).__module__ == {PLUGIN!r}
         """
     )
     _run(pytester).assert_outcomes(passed=1)
+
+
+@pytest.mark.parametrize("fixture", ["tmpdir", "tmpdir_factory"])
+def test_py_path_fixtures_are_not_provided(
+    pytester: pytest.Pytester, fixture: str
+) -> None:
+    pytester.makepyfile(f"def test_legacy({fixture}): pass")
+    result = _run(pytester, "-p", PLUGIN)
+    result.stdout.fnmatch_lines([f"*fixture '{fixture}' not found*"])
+    result.assert_outcomes(errors=1)
 
 
 @pytest.mark.parametrize("block", [False, True], ids=["alone", "with-no-tmpdir"])
@@ -77,14 +86,11 @@ def test_fixtures_live_in_the_run(pytester: pytest.Pytester) -> None:
         def test_tmp_path(tmp_path):
             assert str(tmp_path).startswith(BASE)
 
-        def test_tmpdir(tmpdir):
-            assert str(tmpdir).startswith(BASE)
-
         def test_pytester(pytester):
             assert str(pytester.path).startswith(BASE)
         """
     )
-    _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=3)
+    _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=2)
 
 
 @not_built
@@ -211,22 +217,6 @@ def test_symlink_to_a_fresh_empty_folder_is_refused(pytester: pytest.Pytester) -
     pytester.makepyfile("def test_nothing(): pass")
     result = _run(pytester, "-p", PLUGIN, f"--basetemp={link}")
     assert result.ret == pytest.ExitCode.USAGE_ERROR
-
-
-@not_built
-def test_tmpdir_factory_returns_legacy_paths(pytester: pytest.Pytester) -> None:
-    base = pytester.path / "new"
-    Root(base)  # fail here, not in the child, while the core is a stub
-    pytester.makepyfile(
-        """
-        from _pytest.compat import LEGACY_PATH
-
-        def test_legacy(tmpdir_factory):
-            assert isinstance(tmpdir_factory.mktemp("x"), LEGACY_PATH)
-            assert isinstance(tmpdir_factory.getbasetemp(), LEGACY_PATH)
-        """
-    )
-    _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=1)
 
 
 @not_built

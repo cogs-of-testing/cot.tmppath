@@ -6,7 +6,9 @@ Enable it per project with::
     addopts = -p cot.tmppath.overtake_pytest
 
 Loaded with ``-p``, it unregisters pytest's ``tmpdir`` plugin and provides
-``tmp_path``, ``tmp_path_factory``, ``tmpdir`` and ``tmpdir_factory`` itself.
+``tmp_path`` and ``tmp_path_factory`` itself. The ``py.path`` fixtures
+``tmpdir`` and ``tmpdir_factory`` are left out on purpose: with the plugin
+on, a test that asks for them fails with "fixture not found".
 pytest's ``tmp_path_retention_count`` and ``tmp_path_retention_policy``
 settings keep working, and pytest-xdist workers join the controller's run.
 ``--basetemp`` must name a folder that does not exist yet; it is created and
@@ -27,7 +29,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _pytest.compat import legacy_path
 
 from ._api import KEEP_EVERYTHING, Outcome, Retention, Root, Run
 
@@ -206,34 +207,11 @@ def tmp_path_factory(request: pytest.FixtureRequest) -> TempPathFactory:
     return TempPathFactory(request.config.stash[_state])
 
 
-class TempdirFactory:
-    """What ``tmpdir_factory`` returns: the same, with ``py.path`` results."""
-
-    def __init__(self, factory: TempPathFactory) -> None:
-        self._factory = factory
-
-    def getbasetemp(self) -> Any:
-        return legacy_path(self._factory.getbasetemp())
-
-    def mktemp(self, basename: str, numbered: bool = True) -> Any:
-        return legacy_path(self._factory.mktemp(basename, numbered))
-
-
-@pytest.fixture(scope="session")
-def tmpdir_factory(tmp_path_factory: TempPathFactory) -> TempdirFactory:
-    return TempdirFactory(tmp_path_factory)
-
-
 @pytest.fixture
 def tmp_path(request: pytest.FixtureRequest, tmp_path_factory: TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp(re.sub(r"\W", "_", request.node.name))
     request.node.stash[_item_path] = path
     return path
-
-
-@pytest.fixture
-def tmpdir(tmp_path: Path) -> Any:
-    return legacy_path(tmp_path)
 
 
 @pytest.hookimpl(wrapper=True)

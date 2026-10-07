@@ -20,8 +20,8 @@ It has two first users, and neither of them is privileged in the core:
 
 - **Test runners.** There is no automatic pytest binding. A project opts in
   with `addopts = -p cot.tmppath.overtake_pytest`, which replaces pytest's
-  `tmp_path`, `tmp_path_factory`, `tmpdir` and `tmpdir_factory` with
-  fixtures backed by cot.tmppath, without the problems listed in the research
+  `tmp_path` and `tmp_path_factory` with fixtures backed by cot.tmppath
+  (the `py.path` fixtures `tmpdir` and `tmpdir_factory` are not provided), without the problems listed in the research
   ([pytest-replacement.md](pytest-replacement.md)).
 - **cot.runsomewhere.** Workers on a target need scratch and staging folders
   while bootstrapping and deploying: wheels being received before they move

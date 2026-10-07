@@ -121,9 +121,10 @@ above:
   `tmp_path_retention_count` and `tmp_path_retention_policy` stay valid under
   `--strict-config`. If the user also passes `-p no:tmpdir`, the plugin
   registers both itself **(verified)**.
-- It provides all four fixtures. `tmp_path_factory` offers `mktemp` and
-  `getbasetemp`; `tmpdir_factory` wraps it and returns `py.path` objects,
-  as pytest's does.
+- It provides `tmp_path` and `tmp_path_factory`, which offers `mktemp` and
+  `getbasetemp`. It deliberately leaves out the `py.path` fixtures `tmpdir`
+  and `tmpdir_factory` (point 1), so a suite that still uses them fails with
+  "fixture not found" and has to move to `tmp_path`.
 - `getbasetemp()` is the process's own folder in the run, named by the
   xdist controller (`gw0`, ...) or `main` without xdist, so
   `getbasetemp().parent` is the run's shared folder, as with pytest under
