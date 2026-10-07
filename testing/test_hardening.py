@@ -8,10 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import not_built, posix_only
+from conftest import posix_only
 from cot.tmppath import Root, UnsafeRootError
-
-pytestmark = not_built
 
 
 @posix_only

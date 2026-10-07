@@ -13,9 +13,6 @@ import time
 
 import pytest
 
-from conftest import not_built
-from cot.tmppath import Root
-
 pytest_plugins = ["pytester"]
 
 PLUGIN = "cot.tmppath.overtake_pytest"
@@ -67,17 +64,15 @@ def test_nothing_is_created_until_a_folder_is_asked_for(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     temproot = pytester.mkdir("temproot")
-    for name in ("TMPDIR", "TEMP", "TMP"):
+    for name in ("TMPDIR", "TEMP", "TMP", "PYTEST_DEBUG_TEMPROOT"):
         monkeypatch.setenv(name, str(temproot))
     pytester.makepyfile("def test_nothing(tmp_path_factory): pass")
     _run(pytester, "-p", PLUGIN).assert_outcomes(passed=1)
     assert list(temproot.iterdir()) == []
 
 
-@not_built
 def test_fixtures_live_in_the_run(pytester: pytest.Pytester) -> None:
     base = pytester.path / "base"
-    Root(base)  # fail here, not in the child, while the core is a stub
     pytester.makepyfile(
         f"""
         pytest_plugins = ["pytester"]
@@ -93,15 +88,13 @@ def test_fixtures_live_in_the_run(pytester: pytest.Pytester) -> None:
     _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=2)
 
 
-@not_built
 def test_failed_policy_keeps_setup_and_teardown_failures(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # retention only applies without --basetemp, so give pytest its own temproot
     temproot = pytester.mkdir("temproot")
-    for name in ("TMPDIR", "TEMP", "TMP"):
+    for name in ("TMPDIR", "TEMP", "TMP", "PYTEST_DEBUG_TEMPROOT"):
         monkeypatch.setenv(name, str(temproot))
-    Root(temproot)  # fail here, not in the child, while the core is a stub
     pytester.makeini("[pytest]\ntmp_path_retention_policy = failed\n")
     pytester.makepyfile(
         """
@@ -128,11 +121,9 @@ def test_failed_policy_keeps_setup_and_teardown_failures(
     assert not any(name.startswith("test_passes") for name in kept)
 
 
-@not_built
 def test_xdist_workers_join_the_controllers_run(pytester: pytest.Pytester) -> None:
     pytest.importorskip("xdist")
     base = pytester.path / "base"
-    Root(base)  # fail here, not in the child, while the core is a stub
     pytester.makepyfile(
         """
         import pytest
@@ -160,10 +151,8 @@ def test_existing_basetemp_is_refused(pytester: pytest.Pytester) -> None:
     assert precious.read_text() == "keep me"
 
 
-@not_built
 def test_new_basetemp_is_created_and_never_pruned(pytester: pytest.Pytester) -> None:
     base = pytester.path / "new"
-    Root(base)  # fail here, not in the child, while the core is a stub
     pytester.makeini(
         "[pytest]\ntmp_path_retention_policy = none\ntmp_path_retention_count = 0\n"
     )
@@ -172,11 +161,9 @@ def test_new_basetemp_is_created_and_never_pruned(pytester: pytest.Pytester) -> 
     assert list(base.rglob("f"))
 
 
-@not_built
 def test_xdist_workers_accept_the_new_basetemp(pytester: pytest.Pytester) -> None:
     pytest.importorskip("xdist")
     base = pytester.path / "new"
-    Root(base)  # fail here, not in the child, while the core is a stub
     pytester.makepyfile("def test_one(tmp_path): pass\ndef test_two(tmp_path): pass")
     result = _run(pytester, "-p", PLUGIN, f"--basetemp={base}", "-n", "2")
     result.assert_outcomes(passed=2)
@@ -219,13 +206,11 @@ def test_symlink_to_a_fresh_empty_folder_is_refused(pytester: pytest.Pytester) -
     assert result.ret == pytest.ExitCode.USAGE_ERROR
 
 
-@not_built
 def test_getbasetemp_is_per_process_and_its_parent_is_the_run(
     pytester: pytest.Pytester,
 ) -> None:
     pytest.importorskip("xdist")
     base = pytester.path / "new"
-    Root(base)  # fail here, not in the child, while the core is a stub
     pytester.makepyfile(
         """
         import os

@@ -9,10 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import not_built, run_python
+from conftest import run_python
 from cot.tmppath import Retention, Root
-
-pytestmark = not_built
 
 
 def test_another_process_can_join_a_run(root_path: Path) -> None:
@@ -58,7 +56,6 @@ def test_live_run_survives_a_prune(root_path: Path) -> None:
 
 
 def test_crashed_owner_run_is_collected(root_path: Path) -> None:
-    Root(root_path)  # fail here, not in the child, while the core is a stub
     crashed = run_python(
         f"""
         import os

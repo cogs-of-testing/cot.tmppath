@@ -5,10 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conftest import not_built
 from cot.tmppath import PytestLayout, Root
-
-pytestmark = not_built
 
 
 def test_items_sit_directly_in_the_run_folder(root_path: Path) -> None:

@@ -2,7 +2,8 @@
 
 *Written by Claude via Claude Code from Ronny's brief; Ronny prompted it.*
 
-Status as of 2026-10-05. Checked against `main`, pytest 9.1.1 and
+Status as of 2026-10-05, before the core was built (2026-10-07,
+[core.md](core.md)); the hardening tests below now pass. Checked against `main`, pytest 9.1.1 and
 pytest-xdist 3.8. **(verified)** means it was run, not read.
 
 ## Summary

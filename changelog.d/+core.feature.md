@@ -1,0 +1,1 @@
+Build the core: `Root`, `Run`, the flat and pytest layouts, retention, pruning, liveness and atomic placement now work instead of raising `NotImplementedError`, so `-p cot.tmppath.overtake_pytest` provides working `tmp_path` and `tmp_path_factory` fixtures.

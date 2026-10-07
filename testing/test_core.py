@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import cot.tmppath
-from conftest import not_built, run_python
+from conftest import run_python
 from cot.tmppath import Outcome, Retention, Root
 
 
@@ -33,7 +33,6 @@ def test_is_pure_python() -> None:
     assert suffixes <= {".py", ".pyc", ".typed", ""}
 
 
-@not_built
 def test_never_prints(root_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
     root = Root(root_path, retention=Retention(keep_failed_only=True, keep_runs=0))
     with root.start_run() as run:

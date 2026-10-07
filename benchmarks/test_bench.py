@@ -16,10 +16,6 @@ from _pytest.tmpdir import TempPathFactory
 
 from cot.tmppath import Outcome, Retention, Root
 
-not_built = pytest.mark.xfail(
-    raises=NotImplementedError, reason="core not built yet (docs/goals.md)"
-)
-
 # pytest scans the base folder on every mktemp, so cost grows with siblings
 ITEMS = [100, 1000]
 
@@ -61,7 +57,6 @@ def test_items_pytest(benchmark, fresh: _Fresh, count: int) -> None:
     benchmark.pedantic(make, rounds=5, iterations=1)
 
 
-@not_built
 @pytest.mark.parametrize("count", ITEMS)
 def test_items_cot(benchmark, fresh: _Fresh, count: int) -> None:
     def make() -> None:
@@ -91,7 +86,6 @@ def test_removal_pytest(benchmark, fresh: _Fresh) -> None:
     )
 
 
-@not_built
 def test_removal_cot(benchmark, fresh: _Fresh) -> None:
     root = Root(fresh(), retention=Retention(keep_failed_only=True))
     with root.start_run() as run:

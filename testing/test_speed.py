@@ -11,10 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import not_built
 from cot.tmppath import Outcome, Retention, Root
-
-pytestmark = not_built
 
 
 def _no_listing(*args: object, **kwargs: object) -> object:
@@ -26,10 +23,13 @@ def test_making_an_item_does_not_list_the_run_folder(
 ) -> None:
     with Root(root_path).start_run() as run:
         run.item("warm")
-        monkeypatch.setattr(os, "scandir", _no_listing)
-        monkeypatch.setattr(os, "listdir", _no_listing)
-        for _ in range(100):
-            run.item("test_x")
+        # closing applies retention, which lists the root; that is not the
+        # hot path
+        with monkeypatch.context() as patched:
+            patched.setattr(os, "scandir", _no_listing)
+            patched.setattr(os, "listdir", _no_listing)
+            for _ in range(100):
+                run.item("test_x")
 
 
 def test_default_root_touches_nothing_until_a_run_starts(tmp_path: Path) -> None:

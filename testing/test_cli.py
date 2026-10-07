@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import not_built
-from cot.tmppath import Retention, Root
+from cot.tmppath import KEEP_EVERYTHING, Root
 from cot.tmppath.__main__ import NO_CONFIRMATION_FLAG, main, parse_duration
 
 
@@ -51,7 +50,8 @@ def test_dry_run_and_no_confirmation_exclude_each_other(tmp_path: Path) -> None:
 
 
 def _old_runs(root_path: Path) -> list[Path]:
-    root = Root(root_path, retention=Retention(keep_runs=1))
+    # kept at close, so only the prune under test removes them
+    root = Root(root_path, retention=KEEP_EVERYTHING)
     runs = []
     for _ in range(3):
         with root.start_run() as run:
@@ -59,7 +59,6 @@ def _old_runs(root_path: Path) -> list[Path]:
     return runs
 
 
-@not_built
 def test_dry_run_lists_and_removes_nothing(root_path: Path) -> None:
     runs = _old_runs(root_path)
     out = io.StringIO()
@@ -71,7 +70,6 @@ def test_dry_run_lists_and_removes_nothing(root_path: Path) -> None:
     assert str(runs[-1]) in out.getvalue()
 
 
-@not_built
 @pytest.mark.parametrize("answer", ["no", "y", "YES please", ""])
 def test_anything_but_yes_aborts(root_path: Path, answer: str) -> None:
     runs = _old_runs(root_path)
@@ -84,7 +82,6 @@ def test_anything_but_yes_aborts(root_path: Path, answer: str) -> None:
     assert all(path.exists() for path in runs)
 
 
-@not_built
 def test_yes_removes_exactly_what_was_listed(root_path: Path) -> None:
     runs = _old_runs(root_path)
     out = io.StringIO()
@@ -97,7 +94,6 @@ def test_yes_removes_exactly_what_was_listed(root_path: Path) -> None:
     assert not any(path.exists() for path in runs)
 
 
-@not_built
 def test_the_long_flag_removes_without_asking(root_path: Path) -> None:
     runs = _old_runs(root_path)
     code = main(

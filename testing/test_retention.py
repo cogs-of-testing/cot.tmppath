@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import not_built
 from cot.tmppath import Outcome, Retention, Root
-
-pytestmark = not_built
 
 
 def test_keep_failed_only_keeps_failed_items(root_path: Path) -> None:
