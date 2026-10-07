@@ -11,6 +11,7 @@ import pytest
 
 from conftest import run_python
 from cot.tmppath import Retention, Root
+from cot.tmppath._owner import Owner
 
 
 def test_another_process_can_join_a_run(root_path: Path) -> None:
@@ -87,3 +88,17 @@ def test_place_is_atomic(root_path: Path) -> None:
             staging.write_bytes(b"whole")
     assert destination.read_bytes() == b"whole"
     assert list(destination.parent.iterdir()) == [destination]
+
+
+@pytest.mark.skipif(
+    not Owner.current().started, reason="no process start time on this platform"
+)
+def test_reused_pid_does_not_keep_a_run_alive(root_path: Path) -> None:
+    run = Root(root_path).start_run()
+    # what a crashed holder looks like once its pid went to another process
+    here = Owner.current()
+    reused = Owner(here.pid, here.host, here.boot, started="0")
+    (holder,) = (run.path / ".cot-holders").iterdir()
+    holder.write_bytes(reused.to_bytes())
+    Root(root_path, retention=Retention(keep_runs=0)).prune()
+    assert not run.path.exists()
