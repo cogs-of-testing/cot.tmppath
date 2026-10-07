@@ -58,13 +58,14 @@ The default root adds two levels above this:
 ## Liveness and retention (G4, G5)
 
 - A process that starts or joins a run writes a holder file with its pid,
-  host and Linux boot id, and removes it when it closes the run. A run is
-  live while any holder may be alive: same host and boot, and the pid
-  exists. A holder from another host always counts as alive, so a run is
+  host, Linux boot id and process start time, and removes it when it closes
+  the run. A run is live while any holder may be alive: same host and boot,
+  the pid exists, and the process with that pid started when the holder
+  says. A holder from another host always counts as alive, so a run is
   never collected on a guess.
-- **Open:** a pid that is reused by an unrelated process keeps a crashed
-  run alive until that process ends. Recording the process start time would
-  close that gap.
+- The start time comes from `/proc` on Linux and `GetProcessTimes` on
+  Windows. **Open:** macOS has neither, so there a pid reused by an
+  unrelated process keeps a crashed run alive until that process ends.
 - Closing a run applies retention to the whole root: the newest
   `keep_runs` runs stay, older ones that are not live go, and so do runs
   older than `max_age`. The run being closed counts as the newest. A
