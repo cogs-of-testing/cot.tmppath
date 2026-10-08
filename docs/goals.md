@@ -59,8 +59,9 @@ The starting point is deliberately simple:
 ```
 
 - **run** is one invocation. Several processes can join the same run
-  (xdist-style workers, runsomewhere workers) and share its folder. That
-  replaces the `getbasetemp().parent` convention.
+  (xdist-style workers, runsomewhere workers) and share its folder. Under
+  pytest-xdist that keeps the `getbasetemp().parent` convention: a worker's
+  `getbasetemp()` is its process folder, and its parent is the run.
 - **process folders** (`Run.process_folder(name)`) give each process of a
   run its own folder directly in the run. The manager of the processes
   picks the names (the xdist controller names `gw0`, `gw1`, ...), never the

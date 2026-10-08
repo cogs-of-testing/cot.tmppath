@@ -1,8 +1,6 @@
 """cot.tmppath.overtake_pytest: opt-in takeover of pytest's tmp fixtures.
 
-The mechanism tests pass already: the plugin creates its run lazily, so
-loading it and handing out factories never touches the stubbed core. The
-behaviour tests are xfail until the core is built.
+Every test runs pytest in a subprocess with the plugin enabled by ``-p``.
 """
 
 from __future__ import annotations
@@ -22,18 +20,55 @@ def _run(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
     return pytester.run(sys.executable, "-m", "pytest", "-p", "no:cacheprovider", *args)
 
 
+TAKEN_OVER = f"""
+def test_takeover(request, tmp_path_factory):
+    config = request.config
+    assert not config.pluginmanager.has_plugin("tmpdir")
+    assert not config.pluginmanager.has_plugin("legacypath-tmpdir")
+    assert config._tmp_path_factory is tmp_path_factory
+    assert type(tmp_path_factory).__module__ == {PLUGIN!r}
+"""
+
+
 def test_addopts_opt_in_takes_over(pytester: pytest.Pytester) -> None:
     pytester.makeini(f"[pytest]\naddopts = -p {PLUGIN}\n")
-    pytester.makepyfile(
-        f"""
-        def test_takeover(request, tmp_path_factory):
-            config = request.config
-            assert not config.pluginmanager.has_plugin("tmpdir")
-            assert config._tmp_path_factory is tmp_path_factory
-            assert type(tmp_path_factory).__module__ == {PLUGIN!r}
-        """
-    )
+    pytester.makepyfile(TAKEN_OVER)
     _run(pytester).assert_outcomes(passed=1)
+
+
+PYTEST_OWN_FIXTURES = """
+    def test_tmp_path(tmp_path, tmp_path_factory, request):
+        assert type(tmp_path_factory).__module__ == "_pytest.tmpdir"
+        assert request.config._tmp_path_factory is tmp_path_factory
+        assert request.config.pluginmanager.has_plugin("tmpdir")
+
+    def test_tmpdir(tmpdir, tmpdir_factory):
+        pass
+"""
+
+
+@pytest.mark.parametrize("where", ["command-line", "addopts"])
+def test_opting_out_again_leaves_pytest_untouched(
+    pytester: pytest.Pytester, where: str
+) -> None:
+    # the module is registered, then unregistered by the later -p no:,
+    # as when a shared configuration opts in and one invocation opts out
+    if where == "addopts":
+        pytester.makeini(f"[pytest]\naddopts = -p {PLUGIN}\n")
+        args = ["-p", f"no:{PLUGIN}"]
+    else:
+        args = ["-p", PLUGIN, "-p", f"no:{PLUGIN}"]
+    pytester.makepyfile(PYTEST_OWN_FIXTURES)
+    _run(pytester, *args).assert_outcomes(passed=2)
+
+
+def test_loading_from_a_conftest_is_refused(pytester: pytest.Pytester) -> None:
+    # too late: the tmpdir plugin configures itself in the same hook call
+    pytester.makeconftest(f"pytest_plugins = [{PLUGIN!r}]")
+    pytester.makepyfile("def test_nothing(): pass")
+    result = _run(pytester)
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines([f"*enable {PLUGIN} with -p {PLUGIN}*"])
 
 
 @pytest.mark.parametrize("fixture", ["tmpdir", "tmpdir_factory"])

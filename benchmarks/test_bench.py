@@ -1,7 +1,7 @@
 """Benchmarks against pytest's own tmp_path machinery (docs/goals.md, G3).
 
 Each scenario runs once with pytest's ``TempPathFactory`` and once with
-cot.tmppath. The cot.tmppath side is xfail until the core is built.
+cot.tmppath.
 
     uv run --group bench pytest benchmarks
 """

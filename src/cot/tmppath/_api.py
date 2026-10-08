@@ -622,9 +622,15 @@ class Root:
         return run
 
     @classmethod
-    def all_projects(cls, *, temproot: Path | None = None) -> tuple[Root, ...]:
+    def all_projects(
+        cls,
+        *,
+        temproot: Path | None = None,
+        retention: Retention = _DEFAULT_RETENTION,
+    ) -> tuple[Root, ...]:
         """Every project root of the current user under the default location,
-        found from the projects recorded in its runs."""
+        found from the projects recorded in its runs, each with
+        ``retention``."""
         base = Path(tempfile.gettempdir() if temproot is None else temproot)
         if not base.is_dir():
             return ()
@@ -645,7 +651,10 @@ class Root:
                     marker = _read_marker(run)
                 if marker is not None and marker[1] is not None:
                     projects.add(marker[1])
-        return tuple(cls.for_project(p, temproot=base) for p in sorted(projects))
+        return tuple(
+            cls.for_project(p, temproot=base, retention=retention)
+            for p in sorted(projects)
+        )
 
     def plan_prune(self, *, older_than: float | None = None) -> PrunePlan:
         """What a prune would remove, without removing anything.

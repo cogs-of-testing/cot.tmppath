@@ -332,9 +332,12 @@ with Root(Path("custom"), layout=Numbered()).start_run() as run:
 ### Removing old runs by hand
 
 `python -m cot.tmppath prune` (also installed as `cot-tmppath`) removes
-runs that retention no longer keeps, plus, with `--older-than`, runs unused
-for that long. It lists them and asks before removing anything; without a
-terminal it refuses to guess:
+only what it is asked to: with `--older-than`, runs unused for that long;
+with `--keep N`, all but the N most recently started runs of each root; and
+always removals that were interrupted. It does not apply a default
+retention, since it cannot know how a root was made: this one keeps
+everything. It lists what it would remove and asks before removing anything;
+without a terminal it refuses to guess:
 
 ```console
 $ python -m cot.tmppath prune build --older-than 0s --dry-run

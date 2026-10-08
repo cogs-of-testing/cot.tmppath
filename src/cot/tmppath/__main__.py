@@ -4,6 +4,11 @@ This is the application side, so unlike the library it prints and exits.
 It removes only what the library would: folders cot.tmppath created, owned
 by the current user, whose runs are not live.
 
+It removes only what it is asked to: runs unused for ``--older-than``, runs
+beyond the ``--keep`` most recent, and removals that were interrupted. It
+does not apply the retention a root was made with, which it cannot know: a
+root made with ``KEEP_EVERYTHING`` must not lose runs to a default.
+
 By default it lists what it would remove and asks for confirmation.
 ``--dry-run`` only lists. Removing without asking needs a flag that is long
 on purpose, so nobody types it by accident or copies it without reading.
@@ -18,7 +23,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
-from ._api import Root
+from ._api import KEEP_EVERYTHING, Retention, Root
 
 NO_CONFIRMATION_FLAG = "--delete-without-asking-i-have-read-the-dry-run"
 
@@ -34,12 +39,21 @@ def parse_duration(text: str) -> float:
     return int(match[1]) * _UNITS[match[2]]
 
 
+def _count(text: str) -> int:
+    if not text.isdigit():
+        msg = f"not a number of runs: {text!r}"
+        raise argparse.ArgumentTypeError(msg)
+    return int(text)
+
+
 def _parser() -> argparse.ArgumentParser:
     # no abbreviations: "--delete" must not expand to the long flag
     parser = argparse.ArgumentParser(prog="python -m cot.tmppath", allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
     prune = commands.add_parser(
-        "prune", help="remove runs that retention no longer keeps", allow_abbrev=False
+        "prune",
+        help="remove old runs: those unused for --older-than, beyond --keep",
+        allow_abbrev=False,
     )
     prune.add_argument("roots", nargs="*", type=Path, metavar="ROOT")
     prune.add_argument(
@@ -51,7 +65,13 @@ def _parser() -> argparse.ArgumentParser:
         "--older-than",
         type=parse_duration,
         metavar="DURATION",
-        help="also remove runs unused for this long (30m, 12h, 7d, 2w)",
+        help="remove runs unused for this long (30m, 12h, 7d, 2w)",
+    )
+    prune.add_argument(
+        "--keep",
+        type=_count,
+        metavar="N",
+        help="remove all but the N most recently started runs of each root",
     )
     mode = prune.add_mutually_exclusive_group()
     mode.add_argument(
@@ -85,9 +105,11 @@ def main(
             f" use --dry-run, or {NO_CONFIRMATION_FLAG}"
         )
 
-    roots = [Root(path) for path in args.roots]
+    # only what was asked for: never the retention of a default root
+    retention = KEEP_EVERYTHING if args.keep is None else Retention(keep_runs=args.keep)
+    roots = [Root(path, retention=retention) for path in args.roots]
     if args.all_projects:
-        roots.extend(Root.all_projects())
+        roots.extend(Root.all_projects(retention=retention))
     plans = [root.plan_prune(older_than=args.older_than) for root in roots]
     paths = [path for plan in plans for path in plan.paths]
     if not paths:
