@@ -26,6 +26,11 @@ addopts = -p cot.tmppath.overtake_pytest
 
 How and why is in [docs/pytest-replacement.md](docs/pytest-replacement.md).
 
+[docs/examples.md](docs/examples.md) shows the library at work and puts
+pytest and the binding side by side: the folders each leaves behind, which
+failures keep their folder, what `--basetemp` does to an existing folder,
+and the xdist layout. A test runs every example on that page.
+
 Old runs can be removed by hand; it lists them and asks before removing:
 
 ```bash
