@@ -3,9 +3,10 @@
 *Written by Claude via Claude Code from Ronny's brief; Ronny prompted it.*
 
 Status: findings, and the opt-in plugin they led to. This is how pytest can
-run with `tmp_path`, `tmp_path_factory`, `tmpdir` and `tmpdir_factory`
-replaced by fixtures backed by cot.tmppath, and what a replacement has to
-take care of.
+run with its tmp fixtures replaced by fixtures backed by cot.tmppath, and
+what a replacement has to take care of. The findings cover all four
+fixtures; the plugin replaces `tmp_path` and `tmp_path_factory` and, by
+decision, does not supply `tmpdir` and `tmpdir_factory` at all (point 1).
 
 Everything marked **(verified)** was run against pytest 9.1.1 and
 pytest-xdist 3.8, and is pinned by `testing/test_pytest_replacement.py` with a
@@ -78,12 +79,14 @@ is not worth relying on.
    missing, adopted if empty, reused if cot.tmppath made it, and refused
    otherwise, so nothing it did not make is ever touched. xdist hands
    workers the controller's options, so workers skip the check.
-4. **xdist workers join the controller's run.** With A, xdist's `hasattr`
-   check fails silently and workers get no basetemp at all. The replacement
-   implements `pytest_configure_node` (as an `optionalhook`) to put the run's
-   id in `node.workerinput`, and each worker's `pytest_configure` joins that
-   run **(verified with a stand-in)**. This replaces the `getbasetemp().parent`
-   convention with the run's shared folder.
+4. **xdist workers join the controller's run.** If nothing sets
+   `config._tmp_path_factory`, xdist's `hasattr` check fails silently and
+   workers get no `--basetemp` from the controller. The replacement sets it,
+   and implements `pytest_configure_node` (as an `optionalhook`) to put the
+   run's id in `node.workerinput`, so each worker joins that run
+   **(verified with a stand-in)**. pytest's `getbasetemp().parent`
+   convention is kept: a worker's `getbasetemp()` is its own folder in the
+   run (`{run}/gw0`, ...), so its parent is the run all workers share.
 5. **Retention from the whole outcome.** A function-scoped fixture's teardown
    runs *before* pytest builds the teardown report, so the fixture cannot know
    the final outcome. That is why pytest only looks at `call`. The replacement
@@ -112,11 +115,25 @@ It is a module in the package, not a `pytest11` entry point, so installing
 cot.tmppath changes nothing until a project asks for it. It does everything
 above:
 
-- In its `pytest_addoption` it unregisters the `tmpdir` plugin and blocks the
-  name, so `-p no:tmpdir` is not needed. A plugin given with `-p` is loaded
-  while the command line is pre-parsed, before any `pytest_configure`, so the
-  tmpdir plugin never configures itself and legacypath skips its `tmpdir`
-  fixtures **(verified)**. The plugin sets `config._tmp_path_factory` to its
+- In `pytest_load_initial_conftests` it unregisters the `tmpdir` plugin
+  and blocks the name, so `-p no:tmpdir` is not needed. That is the first
+  hook after every `-p` (from the command line, `PYTEST_ADDOPTS` and
+  `addopts`), `PYTEST_PLUGINS` and entry point has been processed, and
+  before any `pytest_configure`, so the tmpdir plugin never configures itself
+  and legacypath skips its `tmpdir` fixtures **(verified)**.
+- `-p no:cot.tmppath.overtake_pytest` after an opt-in (say, on the command
+  line of a project that opts in through `addopts`) opts out again and
+  leaves pytest exactly as it is without the plugin **(verified)**. This is
+  why nothing is taken over in `pytest_addoption`: it runs as soon as `-p`
+  registers the module, and a later `-p no:` unregisters the module but
+  could not bring the tmpdir plugin back. For the same reason the fixtures
+  are not module-level: pytest parses the fixtures of every plugin that was
+  ever registered, even one unregistered again, so the plugin registers them
+  in its `pytest_configure`, which an unregistered module never reaches.
+- Loading it from a conftest's `pytest_plugins` is refused with a usage
+  error: that happens while the initial conftests load, after the hook
+  above, and the tmpdir plugin would then configure itself in the same
+  `pytest_configure` call. The plugin sets `config._tmp_path_factory` to its
   own factory, so plugins that use it (pytest-xdist among them) get
   cot.tmppath's folders, and pytest's basetemp handling is replaced as a
   whole.
@@ -139,7 +156,8 @@ above:
   cot.tmppath did not make, a symlink, or another user's folder is refused
   with a usage error and left untouched **(verified)**. Retention applies
   inside it as anywhere else, to runs cot.tmppath made.
-- Without `--basetemp`, the root is `Root.for_project(rootdir name)`, and
+- Without `--basetemp`, the root is `Root.for_project(rootdir name)`, so an
+  item lands at `{temp}/cot-{uid}/{project}-{stamp}/{item}`, and
   pytest's retention settings map onto `Retention`: `failed` keeps only
   failed items, `none` keeps no runs.
 - `pytester` works unchanged: `runpytest_subprocess` hands over a fresh empty
@@ -153,5 +171,5 @@ above:
 - Folders that could not be removed at the end are reported as
   `PytestWarning`s.
 
-`testing/test_overtake_pytest.py` checks the takeover now and the behaviour
-once the core is built.
+`testing/test_overtake_pytest.py` checks the takeover, the opt-out and the
+behaviour.

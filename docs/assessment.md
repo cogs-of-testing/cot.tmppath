@@ -8,7 +8,12 @@ pytest-xdist 3.8. **(verified)** means it was run, not read.
 
 ## Summary
 
-- **The core implements no hardening yet.** Everything in `_api.py` raises
+*Historical: this is the state on 2026-10-05. Since then the core is built
+and implements the hardening below, the default root has its per-user part
+(`{temp}/cot-{uid}`), and the hardening tests pass; see [core.md](core.md).
+The sections below keep their findings as written.*
+
+- **The core implemented no hardening yet.** Everything in `_api.py` raises
   `NotImplementedError`. What exists is a specification: 4 hardening tests
   in `testing/test_hardening.py`, all xfail. Today cot.tmppath is not safer
   than pytest, it is a plan to be.
@@ -26,7 +31,7 @@ pytest-xdist 3.8. **(verified)** means it was run, not read.
 
 ### What the tests specify
 
-| Property | Test | State |
+| Property | Test | State on 2026-10-05 (all pass now) |
 |---|---|---|
 | root, run and item folders are 0o700 | `test_folders_are_private` | xfail |
 | a symlinked root is refused, target untouched | `test_symlinked_root_is_refused` | xfail |
@@ -132,9 +137,14 @@ same: it runs when a run closes, per project. So nothing ever removes:
 `cot-tmppath` script):
 
 ```text
-python -m cot.tmppath prune [ROOT ...] [--all-projects] [--older-than 7d]
+python -m cot.tmppath prune [ROOT ...] [--all-projects] [--older-than 7d] [--keep N]
                             [--dry-run | --delete-without-asking-i-have-read-the-dry-run]
 ```
+
+- It removes only what it is asked to: runs unused for `--older-than`, runs
+  beyond the `--keep` most recent, and interrupted removals. It applies no
+  default retention: it cannot know the retention a root was made with, and
+  a root made to keep everything must not lose runs to a default of 3.
 
 - By default it lists what it would remove and asks; only typing `yes`
   removes anything. Without a terminal to ask on, it refuses.

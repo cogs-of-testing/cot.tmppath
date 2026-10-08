@@ -103,3 +103,50 @@ def test_the_long_flag_removes_without_asking(root_path: Path) -> None:
     )
     assert code == 0
     assert not any(path.exists() for path in runs)
+
+
+def _many_runs(root_path: Path, count: int) -> list[Path]:
+    # oldest first; more than the default retention keeps
+    root = Root(root_path, retention=KEEP_EVERYTHING)
+    runs = []
+    for _ in range(count):
+        with root.start_run() as run:
+            runs.append(run.path)
+    return runs
+
+
+def test_without_older_than_or_keep_it_selects_no_runs(root_path: Path) -> None:
+    # the root was made to keep everything; the command cannot know that,
+    # so it applies no retention of its own
+    runs = _many_runs(root_path, 5)
+    out = io.StringIO()
+    assert main(["prune", str(root_path), "--dry-run"], stdout=out) == 0
+    assert out.getvalue() == "nothing to remove\n"
+    code = main(
+        ["prune", str(root_path), NO_CONFIRMATION_FLAG],
+        stdin=io.StringIO(),
+        stdout=io.StringIO(),
+    )
+    assert code == 0
+    assert all(path.exists() for path in runs)
+
+
+def test_keep_removes_all_but_the_most_recent(root_path: Path) -> None:
+    runs = _many_runs(root_path, 5)
+    out = io.StringIO()
+    assert main(["prune", str(root_path), "--keep", "2", "--dry-run"], stdout=out) == 0
+    assert sorted(out.getvalue().splitlines()[:-1]) == sorted(map(str, runs[:3]))
+    code = main(
+        ["prune", str(root_path), "--keep", "2", NO_CONFIRMATION_FLAG],
+        stdin=io.StringIO(),
+        stdout=io.StringIO(),
+    )
+    assert code == 0
+    assert [path.exists() for path in runs] == [False, False, False, True, True]
+
+
+@pytest.mark.parametrize("keep", ["-1", "two", ""])
+def test_keep_must_be_a_count(tmp_path: Path, keep: str) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["prune", str(tmp_path), "--keep", keep, "--dry-run"])
+    assert exit_info.value.code == 2

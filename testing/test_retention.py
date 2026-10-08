@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cot.tmppath import Outcome, Retention, Root
+from cot.tmppath import KEEP_EVERYTHING, Outcome, Retention, Root
 
 
 def test_keep_failed_only_keeps_failed_items(root_path: Path) -> None:
@@ -81,3 +81,10 @@ def test_all_projects_are_found_from_their_runs(tmp_path: Path) -> None:
             pass
     found = Root.all_projects(temproot=tmp_path)
     assert [root.project for root in found] == ["alpha", "beta"]
+
+
+def test_all_projects_take_a_retention(tmp_path: Path) -> None:
+    for project in ("alpha", "beta"):
+        Root.for_project(project, temproot=tmp_path).start_run().close()
+    found = Root.all_projects(temproot=tmp_path, retention=KEEP_EVERYTHING)
+    assert [root.retention for root in found] == [KEEP_EVERYTHING] * 2

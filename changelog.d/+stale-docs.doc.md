@@ -1,0 +1,1 @@
+`docs/pytest-replacement.md` no longer says the plugin replaces `tmpdir` and `tmpdir_factory` (it does not supply them) or that xdist drops the `getbasetemp().parent` convention (it is kept), and describes the opt-out; `docs/assessment.md` marks its summary as the state before the core was built; test and benchmark docstrings no longer mention xfail tests.

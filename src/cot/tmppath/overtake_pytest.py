@@ -6,7 +6,10 @@ Enable it per project with::
     addopts = -p cot.tmppath.overtake_pytest
 
 Loaded with ``-p``, it unregisters pytest's ``tmpdir`` plugin and provides
-``tmp_path`` and ``tmp_path_factory`` itself. The ``py.path`` fixtures
+``tmp_path`` and ``tmp_path_factory`` itself; a later
+``-p no:cot.tmppath.overtake_pytest`` opts out again and leaves pytest's own
+fixtures in place. Loading it from a conftest's ``pytest_plugins`` is too late
+and is refused with a usage error. The ``py.path`` fixtures
 ``tmpdir`` and ``tmpdir_factory`` are left out on purpose: with the plugin
 on, a test that asks for them fails with "fixture not found".
 It also sets ``config._tmp_path_factory``, so pytest's basetemp handling is
@@ -41,16 +44,16 @@ _PROCESS = "cot_tmppath_process"
 _item_path = pytest.StashKey[Path]()
 _item_failed = pytest.StashKey[bool]()
 _state = pytest.StashKey["_State"]()
+_taken_over = pytest.StashKey[bool]()
 
 
 def pytest_addoption(parser: pytest.Parser, pluginmanager: Any) -> None:
-    tmpdir = pluginmanager.get_plugin("tmpdir")
-    if tmpdir is not None:
-        # The tmpdir plugin already registered the retention ini options, so
-        # existing configurations stay valid under --strict-config.
-        pluginmanager.unregister(tmpdir)
-    else:
-        # Blocked by the user with -p no:tmpdir: its ini options are missing.
+    # Nothing is taken over here: this runs as soon as the module is
+    # registered, while the command line is still being read, and a later
+    # ``-p no:cot.tmppath.overtake_pytest`` unregisters the module again.
+    if pluginmanager.get_plugin("tmpdir") is None:
+        # Blocked by the user with -p no:tmpdir: its ini options are missing,
+        # and existing configurations must stay valid under --strict-config.
         parser.addini(
             "tmp_path_retention_count",
             help="How many runs to keep (cot.tmppath).",
@@ -61,7 +64,21 @@ def pytest_addoption(parser: pytest.Parser, pluginmanager: Any) -> None:
             help="Which item folders to keep: all/failed/none (cot.tmppath).",
             default="all",
         )
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_load_initial_conftests(early_config: pytest.Config) -> None:
+    # The first hook after every -p, PYTEST_ADDOPTS, addopts and entry point
+    # has been processed: a module still registered now stays registered.
+    # Before any pytest_configure, so the tmpdir plugin never configures
+    # itself and legacypath skips tmpdir and tmpdir_factory. The ini options
+    # it added stay, so configurations stay valid under --strict-config.
+    pluginmanager = early_config.pluginmanager
+    tmpdir = pluginmanager.get_plugin("tmpdir")
+    if tmpdir is not None:
+        pluginmanager.unregister(tmpdir)
     pluginmanager.set_blocked("tmpdir")
+    early_config.stash[_taken_over] = True
 
 
 def _retention(config: pytest.Config) -> Retention:
@@ -151,11 +168,22 @@ def _check_basetemp(config: pytest.Config) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    if not config.stash.get(_taken_over, False):
+        # Loaded after the hook above, from a conftest's pytest_plugins: the
+        # tmpdir plugin is configuring itself in this very hook call, and
+        # would replace config._tmp_path_factory after this.
+        msg = f"enable {__name__} with -p {__name__}, not from a conftest"
+        raise pytest.UsageError(msg)
     state = config.stash[_state] = _State(config)
     _check_basetemp(config)
     # what pytest's own tmpdir plugin sets: pytest-xdist and other plugins
     # look for it, and get the cot.tmppath factory
     config._tmp_path_factory = TempPathFactory(state)  # type: ignore[attr-defined]
+    # The fixtures are registered only now. pytest parses the fixtures of
+    # every plugin that was ever registered, even one a later
+    # -p no:cot.tmppath.overtake_pytest unregistered again, so defining them
+    # at module level would shadow pytest's own after an opt-out.
+    config.pluginmanager.register(_Fixtures(), f"{__name__}.fixtures")
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -189,29 +217,32 @@ class TempPathFactory:
         return self._state.run.item(basename, process=self._state.process)
 
 
-@pytest.fixture(scope="session")
-def tmp_path_factory(request: pytest.FixtureRequest) -> TempPathFactory:
-    factory: TempPathFactory = request.config._tmp_path_factory  # type: ignore[attr-defined]
-    return factory
+class _Fixtures:
+    """``tmp_path``, ``tmp_path_factory`` and the outcome they are kept by."""
 
+    @pytest.fixture(scope="session")
+    def tmp_path_factory(self, request: pytest.FixtureRequest) -> TempPathFactory:
+        factory: TempPathFactory = request.config._tmp_path_factory  # type: ignore[attr-defined]
+        return factory
 
-@pytest.fixture
-def tmp_path(request: pytest.FixtureRequest, tmp_path_factory: TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp(re.sub(r"\W", "_", request.node.name))
-    request.node.stash[_item_path] = path
-    return path
+    @pytest.fixture
+    def tmp_path(
+        self, request: pytest.FixtureRequest, tmp_path_factory: TempPathFactory
+    ) -> Path:
+        path = tmp_path_factory.mktemp(re.sub(r"\W", "_", request.node.name))
+        request.node.stash[_item_path] = path
+        return path
 
-
-@pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item, call: pytest.CallInfo[None]
-) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    report = yield
-    failed = item.stash.get(_item_failed, False) or report.failed
-    item.stash[_item_failed] = failed
-    # The fixture's own teardown runs before this report, so only here is
-    # the whole outcome (setup, call and teardown) known.
-    if report.when == "teardown" and _item_path in item.stash:
-        outcome = Outcome.FAILED if failed else Outcome.PASSED
-        item.config.stash[_state].run.finish_item(item.stash[_item_path], outcome)
-    return report
+    @pytest.hookimpl(wrapper=True)
+    def pytest_runtest_makereport(
+        self, item: pytest.Item, call: pytest.CallInfo[None]
+    ) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+        report = yield
+        failed = item.stash.get(_item_failed, False) or report.failed
+        item.stash[_item_failed] = failed
+        # The fixture's own teardown runs before this report, so only here is
+        # the whole outcome (setup, call and teardown) known.
+        if report.when == "teardown" and _item_path in item.stash:
+            outcome = Outcome.FAILED if failed else Outcome.PASSED
+            item.config.stash[_state].run.finish_item(item.stash[_item_path], outcome)
+        return report
