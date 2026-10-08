@@ -197,9 +197,9 @@ class TempPathFactory:
         return self._state.run.process_folder(self._state.process)
 
     def mktemp(self, basename: str, numbered: bool = True) -> Path:
-        # Every item gets a unique name; numbered=False cannot promise the
-        # exact name in a run that other processes share.
-        return self._state.run.item(basename)
+        # Inside getbasetemp(), as pytest does. Every item gets a unique
+        # name; numbered=False cannot promise the exact name.
+        return self._state.run.item(basename, process=self._state.process)
 
 
 @pytest.fixture(scope="session")

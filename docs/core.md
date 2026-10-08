@@ -17,6 +17,7 @@ What `src/cot/tmppath/_api.py` does to keep the goals in
     test_foo/                  items, side by side
     test_foo-1/
     gw0/                       process folders
+      test_bar/                items made with process="gw0"
 ```
 
 Every name starting with `.cot-` is the library's; item names never do.

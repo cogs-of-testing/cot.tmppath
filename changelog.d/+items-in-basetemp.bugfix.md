@@ -1,0 +1,1 @@
+The pytest binding makes `tmp_path` and `tmp_path_factory.mktemp()` folders inside `getbasetemp()`, as pytest does; they used to sit next to it in the run folder. `Run.item()` takes `process=` to make an item inside a process folder.

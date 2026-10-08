@@ -128,8 +128,8 @@ above:
 - `getbasetemp()` is the process's own folder in the run, named by the
   xdist controller (`gw0`, ...) or `main` without xdist, so
   `getbasetemp().parent` is the run's shared folder, as with pytest under
-  xdist. Unlike pytest, `tmp_path` folders are not inside `getbasetemp()`:
-  items sit flat in the run.
+  xdist. As with pytest, `tmp_path` and `mktemp` folders are made inside
+  `getbasetemp()` (`Run.item(name, process=...)`).
 - The run is started on first use, not at configure time, so a session that
   asks for no temporary folder creates nothing **(verified)**.
 - `--basetemp` must name a folder that does not exist yet; the plugin

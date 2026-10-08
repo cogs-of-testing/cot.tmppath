@@ -227,3 +227,24 @@ def test_getbasetemp_is_per_process_and_its_parent_is_the_run(
     result.assert_outcomes(passed=4)
     (run,) = [p for p in base.iterdir() if p.is_dir()]
     assert len(list(run.glob("shared-*"))) == 4
+
+
+@pytest.mark.parametrize("workers", [None, "2"])
+def test_folders_are_made_inside_getbasetemp(
+    pytester: pytest.Pytester, workers: str | None
+) -> None:
+    if workers:
+        pytest.importorskip("xdist")
+    pytester.makepyfile(
+        """
+        def test_tmp_path(tmp_path, tmp_path_factory):
+            assert tmp_path.parent == tmp_path_factory.getbasetemp()
+
+        def test_mktemp(tmp_path_factory):
+            made = tmp_path_factory.mktemp("made")
+            assert made.parent == tmp_path_factory.getbasetemp()
+        """
+    )
+    base = pytester.path / "new"
+    args = ["-n", workers] if workers else []
+    _run(pytester, "-p", PLUGIN, f"--basetemp={base}", *args).assert_outcomes(passed=2)
