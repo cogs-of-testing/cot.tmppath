@@ -88,9 +88,9 @@ def test_library_example(
 # -- pytest comparisons -------------------------------------------------------
 
 _NORMALIZE = [
-    (re.compile(r"run-\d{8}-\d{6}-[0-9a-f]{6}"), "run-<id>"),
+    (re.compile(r"(\w+)-\d{8}-\d{6}-[0-9a-f]{6}"), r"\1-<id>"),
     (re.compile(r"pytest-of-[^/\s]+"), "pytest-of-<user>"),
-    (re.compile(r"cot\.tmppath-[^/\s]+"), "cot.tmppath-<uid>"),
+    (re.compile(r"\bcot-[^/\s]+"), "cot-<uid>"),
 ]
 
 
@@ -237,7 +237,7 @@ def test_xdist_layout(
 
     temproot = _temproot(pytester, monkeypatch, "tmp-cot")
     _pytest(pytester, "-p", PLUGIN, "-n", "2").assert_outcomes(passed=4)
-    (run,) = (temproot / user_folder(temproot) / "myproject").glob("run-*")
+    (run,) = (temproot / user_folder(temproot)).glob("myproject-*")
     workers = [p for p in run.iterdir() if not p.name.startswith(".cot-")]
     assert sorted(p.name for p in workers) == ["gw0", "gw1"]
     assert {p.name for w in workers for p in w.iterdir()} == names
@@ -245,7 +245,7 @@ def test_xdist_layout(
 
 def user_folder(temproot: Path) -> str:
     (folder,) = temproot.iterdir()
-    assert folder.name.startswith("cot.tmppath-")
+    assert folder.name.startswith("cot-")
     return folder.name
 
 

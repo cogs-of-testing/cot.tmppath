@@ -27,9 +27,11 @@ library first, with no host built in, and pytest is one host among others.
   deleted; anything else is refused, never wiped.
 - **Retention is decided from the whole outcome** an item had, which the
   host reports. For pytest that is setup, call and teardown together.
-- **Per project, crash-safe.** The default root is
-  `{temp}/cot.tmppath-{uid}/{project}`, so projects never push out each
-  other's runs. A run is live while a process holding it is alive; a
+- **Per project, crash-safe, shallow.** The default root is the per-user
+  folder `{temp}/cot-{uid}`, and its runs are named after the project
+  (`myproject-{date}-{time}-{random}`), so an item sits two levels below the
+  temp folder, as with pytest. Retention counts each project's runs on its
+  own, so projects never push out each other's runs. A run is live while a process holding it is alive; a
   crashed run is collected as soon as its process is known to be gone, even
   when its pid was reused (the process start time is checked on Linux and
   Windows).
@@ -67,10 +69,11 @@ with root.start_run() as run:
     assert run.path.parent == root.path
 ```
 
-The root is `{temp}/cot.tmppath-{uid}/myproject` (the user name instead of
-the uid on Windows), and run folders are named
-`run-{date}-{time}-{random}`, for example `run-20261008-112036-63b568`.
-`Root(path)` takes any folder instead. What else a run holds (its start
+The root is `{temp}/cot-{uid}` (the user name instead of the uid on
+Windows), shared by the user's projects, and run folders are named
+`{project}-{date}-{time}-{random}`, for example
+`myproject-20261008-112036-63b568`. `Root(path)` takes any folder instead;
+its runs are named `run-{date}-{time}-{random}`. What else a run holds (its start
 time, which processes hold it) is in files whose names start with `.cot-`;
 [core.md](core.md#on-disk) shows them.
 
@@ -407,20 +410,19 @@ $TMPDIR/
     pytest-current -> pytest-0
 ```
 
-cot.tmppath makes one folder per project and one per run, with the items
-side by side; a name gets a suffix only when it is taken:
+cot.tmppath makes one folder per run, named after the project, with the
+items side by side; a name gets a suffix only when it is taken:
 
 ```text tree=layout-cot
 $TMPDIR/
-  cot.tmppath-1000/
-    myproject/
-      run-20261008-112547-81a4f4/
-        data/
-        data-1/
-        test_login_admin/
-        test_login_guest/
-        test_plain/
-          out.txt
+  cot-1000/
+    myproject-20261008-112547-81a4f4/
+      data/
+      data-1/
+      test_login_admin/
+      test_login_guest/
+      test_plain/
+        out.txt
 ```
 
 ### Which folders a failure keeps
@@ -472,11 +474,10 @@ $TMPDIR/
 
 ```text tree=outcome-cot
 $TMPDIR/
-  cot.tmppath-1000/
-    myproject/
-      run-20261008-112548-d034fb/
-        test_fails/
-        test_teardown_error/
+  cot-1000/
+    myproject-20261008-112548-d034fb/
+      test_fails/
+      test_teardown_error/
 ```
 
 ### `--basetemp` never deletes what cot.tmppath did not make
@@ -573,15 +574,14 @@ $TMPDIR/
 
 ```text
 $TMPDIR/
-  cot.tmppath-1000/
-    myproject/
-      run-20261008-112056-08260f/
-        gw0/
-          test_item_0/
-          test_item_1/
-        gw1/
-          test_item_2/
-          test_item_3/
+  cot-1000/
+    myproject-20261008-112056-08260f/
+      gw0/
+        test_item_0/
+        test_item_1/
+      gw1/
+        test_item_2/
+        test_item_3/
 ```
 
 ### Projects keep their own runs
@@ -608,17 +608,15 @@ $TMPDIR/
 
 ```text tree=projects-cot
 $TMPDIR/
-  cot.tmppath-1000/
-    alpha/
-      run-20261008-112549-5d420d/
-        test_one/
-    beta/
-      run-20261008-112550-09e399/
-        test_one/
-      run-20261008-112550-8d0293/
-        test_one/
-      run-20261008-112550-a07770/
-        test_one/
+  cot-1000/
+    alpha-20261008-112549-5d420d/
+      test_one/
+    beta-20261008-112550-09e399/
+      test_one/
+    beta-20261008-112550-8d0293/
+      test_one/
+    beta-20261008-112550-a07770/
+      test_one/
 ```
 
 ### `mktemp(numbered=False)` and `tmpdir`
@@ -677,7 +675,7 @@ the way with one rename. The measured numbers are in
 
 | What | pytest | cot.tmppath |
 |---|---|---|
-| layout | `pytest-of-{user}/pytest-{N}/{test}{M}` | `cot.tmppath-{uid}/{project}/{run}/{item}` |
+| layout | `pytest-of-{user}/pytest-{N}/{test}{M}` | `cot-{uid}/{project}-{run}/{item}` |
 | xdist | `pytest-{N}/popen-gwN/{test}{M}` | `{run}/gwN/{item}` |
 | runs kept | 3 for all projects together | 3 per project |
 | `failed` policy | judged on `call` | judged on setup, call and teardown |

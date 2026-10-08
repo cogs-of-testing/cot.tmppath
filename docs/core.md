@@ -11,7 +11,7 @@ What `src/cot/tmppath/_api.py` does to keep the goals in
 {root}/
   .cot-tmppath                 marker: this root was made by cot.tmppath
   run-20261007-161500-a1b2c3/  one folder per run
-    .cot-run                   the run's start time
+    .cot-run                   the run's start time (and project)
     .cot-holders/{pid}-{token} one file per process using the run
     .cot-trash-{pid}-{token}/  removed items of one process, until it closes
     test_foo/                  items, side by side
@@ -21,8 +21,10 @@ What `src/cot/tmppath/_api.py` does to keep the goals in
 ```
 
 Every name starting with `.cot-` is the library's; item names never do.
-The default root adds two levels above this:
-`{temproot}/cot.tmppath-{uid}/{project}`.
+The default root is the per-user folder `{temproot}/cot-{uid}`, shared by
+the user's projects: runs there are named `{project}-{date}-{time}-{random}`
+and `.cot-run` also records the project, which is what retention and
+`Root.all_projects()` go by.
 
 ## Hardening (G1)
 
@@ -53,8 +55,10 @@ The default root adds two levels above this:
 - A second item of the same name gets `-1`, `-2`, ... from a counter in the
   layout object. Making an item is one `mkdir` (more only when another
   process took the name), and never lists the run folder.
-- Run names are `run-{date}-{time}-{random}`. Their order comes from the
-  start time in `.cot-run`, not the name.
+- Run names are `{prefix}-{date}-{time}-{random}`, the prefix being the
+  project for a default root and `run` otherwise. Their order comes from
+  the start time in `.cot-run`, not the name, and which project a run
+  belongs to comes from `.cot-run` too, never from parsing the name.
 
 ## Liveness and retention (G4, G5)
 

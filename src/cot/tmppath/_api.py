@@ -197,19 +197,22 @@ def _readable(name: str) -> str:
 
 
 class FlatLayout:
-    """The default: ``{root}/{run}/{item}``, items side by side.
+    """The default: ``{root}/{prefix}-{stamp}/{item}``, items side by side.
 
-    An item is named after what the caller names it; a second item of the
-    same name gets ``-1``, ``-2``, ... appended. The counters live in this
-    object, so making an item never lists the run folder (G3).
+    A run is named ``{prefix}-{YYYYMMDD-HHMMSS}-{random}``; the prefix is
+    the project for a default root and ``run`` otherwise. An item is named
+    after what the caller names it; a second item of the same name gets
+    ``-1``, ``-2``, ... appended. The counters live in this object, so
+    making an item never lists the run folder (G3).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, prefix: str = "run") -> None:
+        self._prefix = _check_name(prefix, "run prefix")
         self._next: dict[tuple[Path, str], int] = {}
 
     def run_name(self, root: Path) -> str:
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        return f"run-{stamp}-{secrets.token_hex(3)}"
+        return f"{self._prefix}-{stamp}-{secrets.token_hex(3)}"
 
     def item_name(self, run: Path, name: str) -> str:
         base = _readable(name)
@@ -421,8 +424,8 @@ def _move(staging: Path, destination: Path) -> None:
 
 def _user_folder_name() -> str:
     if hasattr(os, "getuid"):
-        return f"cot.tmppath-{os.getuid()}"
-    return f"cot.tmppath-{_UNSAFE_CHARS.sub('_', getpass.getuser())}"
+        return f"cot-{os.getuid()}"
+    return f"cot-{_UNSAFE_CHARS.sub('_', getpass.getuser())}"
 
 
 def _unsafe(path: Path, problem: str, fix: str) -> UnsafeRootError:
@@ -492,7 +495,12 @@ def _check_private(folder: Dir) -> None:
 
 
 class Root:
-    """The folder that holds one project's runs."""
+    """The folder that holds one project's runs.
+
+    A default root (``for_project``) shares the per-user folder with the
+    user's other projects; its runs are told apart by the project recorded
+    in each run's marker, so retention only ever counts a project's own runs.
+    """
 
     path: Path
 
@@ -505,20 +513,24 @@ class Root:
     ) -> None:
         # absolute, never resolved: a symlink at the root must stay visible
         path = Path(path).absolute()
-        self._init(path.parent, (path.name,), retention, layout)
+        self._init(path.parent, path.name, None, retention, layout)
 
     def _init(
         self,
         base: Path,
-        levels: tuple[str, ...],
+        name: str,
+        project: str | None,
         retention: Retention,
         layout: Layout | None,
     ) -> None:
         self._base = base
-        self._levels = levels
-        self.path = base.joinpath(*levels)
+        self._name = name
+        self.project = project
+        self.path = base / name
         self.retention = retention
-        self.layout: Layout = FlatLayout() if layout is None else layout
+        if layout is None:
+            layout = FlatLayout("run" if project is None else project)
+        self.layout: Layout = layout
 
     @classmethod
     def for_project(
@@ -531,21 +543,18 @@ class Root:
     ) -> Root:
         """The default root for ``project`` under the system temp folder.
 
-        The root is ``{temproot}/cot.tmppath-{user}/{project}``, with the
-        user as the uid on POSIX and the user name on Windows. The per-user
-        folder is private and owner-checked, so another user cannot block or
-        read a project's runs by creating its folder first. Touches nothing
-        on disk until the first run starts.
+        The root is the per-user folder ``{temproot}/cot-{user}``, with the
+        user as the uid on POSIX and the user name on Windows, and the runs
+        are named ``{project}-{stamp}``, so an item sits two levels below
+        the temp folder, as with pytest. The per-user folder is private and
+        owner-checked, so another user cannot block or read a project's runs
+        by creating it first. Touches nothing on disk until the first run
+        starts.
         """
         _check_name(project, "project")
         base = Path(tempfile.gettempdir() if temproot is None else temproot)
         root = cls.__new__(cls)
-        root._init(
-            base.absolute(),
-            (_user_folder_name(), project),
-            retention,
-            layout,
-        )
+        root._init(base.absolute(), _user_folder_name(), project, retention, layout)
         return root
 
     def __repr__(self) -> str:
@@ -556,16 +565,8 @@ class Root:
             self._base.mkdir(parents=True, exist_ok=True)
         elif not self._base.is_dir():
             return None
-        folder = Dir.at(self._base)
-        for level in self._levels:
-            try:
-                child = _secure_child(folder, level, create=create)
-            finally:
-                folder.close()
-            if child is None:
-                return None
-            folder = child
-        return folder
+        with Dir.at(self._base) as base:
+            return _secure_child(base, self._name, create=create)
 
     def ensure(self) -> None:
         """Create the root, or check an existing one, without starting a run.
@@ -596,7 +597,10 @@ class Root:
             run = Run(self, root.open_dir(name), name)
         # held before it is marked as a run, so a prune never sees it unheld
         run._hold()
-        start = json.dumps({"start_ns": _start_ns()}).encode()
+        marker: dict[str, object] = {"start_ns": _start_ns()}
+        if self.project is not None:
+            marker["project"] = self.project
+        start = json.dumps(marker).encode()
         run._dir.create_file(_RUN_MARKER, start)
         return run
 
@@ -619,7 +623,8 @@ class Root:
 
     @classmethod
     def all_projects(cls, *, temproot: Path | None = None) -> tuple[Root, ...]:
-        """Every project root of the current user under the default location."""
+        """Every project root of the current user under the default location,
+        found from the projects recorded in its runs."""
         base = Path(tempfile.gettempdir() if temproot is None else temproot)
         if not base.is_dir():
             return ()
@@ -627,9 +632,20 @@ class Root:
             user = _secure_child(folder, _user_folder_name(), create=False)
         if user is None:
             return ()
+        projects: set[str] = set()
         with user:
-            names = sorted(name for name, is_dir in user.entries() if is_dir)
-        return tuple(cls(user.path / name) for name in names)
+            for name, is_dir in user.entries():
+                if not is_dir or name.startswith(_DELETING):
+                    continue
+                try:
+                    run = user.open_dir(name)
+                except (FileNotFoundError, NotADirectoryHere):
+                    continue
+                with run:
+                    marker = _read_marker(run)
+                if marker is not None and marker[1] is not None:
+                    projects.add(marker[1])
+        return tuple(cls.for_project(p, temproot=base) for p in sorted(projects))
 
     def plan_prune(self, *, older_than: float | None = None) -> PrunePlan:
         """What a prune would remove, without removing anything.
@@ -655,10 +671,11 @@ class Root:
                 except (FileNotFoundError, NotADirectoryHere):
                     continue
                 with run:
-                    start = _read_start(run)
-                    if start is None:
+                    marker = _read_marker(run)
+                    # a shared user folder holds other projects' runs too
+                    if marker is None or marker[1] != self.project:
                         continue
-                    runs.append((start, name, _is_live(run), root.mtime(name)))
+                    runs.append((marker[0], name, _is_live(run), root.mtime(name)))
         runs.sort(reverse=True)
         now = time.time()
         keep_runs, max_age = self.retention.keep_runs, self.retention.max_age
@@ -680,11 +697,14 @@ class Root:
         return self.plan_prune().apply()
 
 
-def _read_start(run: Dir) -> int | None:
+def _read_marker(run: Dir) -> tuple[int, str | None] | None:
+    """A run's start time and project, or None if it is not a run."""
     data = run.read_file(_RUN_MARKER)
     if data is None:
         return None
     try:
-        return int(json.loads(data)["start_ns"])
-    except (ValueError, KeyError, TypeError):
+        marker = json.loads(data)
+        project = marker.get("project")
+        return int(marker["start_ns"]), project if isinstance(project, str) else None
+    except (ValueError, KeyError, TypeError, AttributeError):
         return None

@@ -58,5 +58,7 @@ def test_process_folders_use_the_managers_name(root_path: Path) -> None:
 def test_default_root_has_a_private_per_user_folder(tmp_path: Path) -> None:
     with Root.for_project("demo", temproot=tmp_path).start_run() as run:
         (user_folder,) = tmp_path.iterdir()
-        assert user_folder.name.startswith("cot.tmppath-")
-        assert run.path.parent == user_folder / "demo"
+        assert user_folder.name.startswith("cot-")
+        # the project names the run, so an item is two levels down
+        assert run.path.parent == user_folder
+        assert re.fullmatch(r"demo-\d{8}-\d{6}-[0-9a-f]{6}", run.path.name)

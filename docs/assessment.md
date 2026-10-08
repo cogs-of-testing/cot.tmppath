@@ -40,7 +40,7 @@ pytest-xdist 3.8. **(verified)** means it was run, not read.
 These are not covered by any test and not decided in `goals.md`:
 
 1. **No per-user part in the default root** (decided: added, as
-   `{temproot}/cot.tmppath-{user}/{project}`, see goals G2). `Root.for_project(project)`
+   `{temproot}/cot-{user}`, with the project in the run name, see goals G2). `Root.for_project(project)`
    puts the root under the system temp folder by project name alone. On a
    shared `/tmp`, user B pre-creating `/tmp/<project>` makes user A's runs
    fail the ownership check: the same denial of service pytest accepts for
