@@ -16,7 +16,7 @@ What `src/cot/tmppath/_api.py` does to keep the goals in
     .cot-trash-{pid}-{token}/  removed items of one process, until it closes
     test_foo/                  items, side by side
     test_foo-1/
-    gw0/                       process folders
+    gw0/                       process folders (one per xdist worker)
       test_bar/                items made with process="gw0"
 ```
 

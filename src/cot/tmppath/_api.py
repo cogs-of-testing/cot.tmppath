@@ -567,6 +567,17 @@ class Root:
             folder = child
         return folder
 
+    def ensure(self) -> None:
+        """Create the root, or check an existing one, without starting a run.
+
+        Raises ``UnsafeRootError`` for anything the root may not use: a
+        symlink, another user's folder, or a non-empty folder cot.tmppath
+        did not create. Nothing in such a folder is touched.
+        """
+        folder = self._open(create=True)
+        assert folder is not None
+        folder.close()
+
     def start_run(self) -> Run:
         """Create a new run folder, held by this process."""
         root = self._open(create=True)

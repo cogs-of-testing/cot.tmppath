@@ -9,10 +9,15 @@ Loaded with ``-p``, it unregisters pytest's ``tmpdir`` plugin and provides
 ``tmp_path`` and ``tmp_path_factory`` itself. The ``py.path`` fixtures
 ``tmpdir`` and ``tmpdir_factory`` are left out on purpose: with the plugin
 on, a test that asks for them fails with "fixture not found".
-pytest's ``tmp_path_retention_count`` and ``tmp_path_retention_policy``
-settings keep working, and pytest-xdist workers join the controller's run.
-``--basetemp`` must name a folder that does not exist yet; it is created and
-nothing under it is ever deleted. See docs/pytest-replacement.md.
+It also sets ``config._tmp_path_factory``, so pytest's basetemp handling is
+replaced as a whole. pytest's ``tmp_path_retention_count`` and
+``tmp_path_retention_policy`` settings keep working.
+
+Layout: ``getbasetemp()`` is the run folder, and ``tmp_path`` folders are
+made inside it. An xdist worker's ``getbasetemp()`` is its own folder in the
+controller's run. ``--basetemp`` names the root that holds the runs; it is
+used only if it is missing, empty, or made by cot.tmppath, and only folders
+cot.tmppath made there are ever removed. See docs/pytest-replacement.md.
 
 This module imports pytest; the rest of cot.tmppath never does.
 """
@@ -21,8 +26,6 @@ from __future__ import annotations
 
 import os
 import re
-import stat
-import time
 import warnings
 from collections.abc import Generator
 from pathlib import Path
@@ -30,7 +33,7 @@ from typing import Any
 
 import pytest
 
-from ._api import KEEP_EVERYTHING, Outcome, Retention, Root, Run
+from ._api import Outcome, Retention, Root, Run, UnsafeRootError
 
 _RUN_ID = "cot_tmppath_run"
 _ROOT = "cot_tmppath_root"
@@ -81,17 +84,25 @@ class _State:
 
     def __init__(self, config: pytest.Config) -> None:
         self._config = config
+        self._root: Root | None = None
         self._run: Run | None = None
 
-    def _root(self) -> Root:
+    @property
+    def root(self) -> Root:
+        if self._root is None:
+            self._root = self._make_root()
+        return self._root
+
+    def _make_root(self) -> Root:
         retention = _retention(self._config)
         worker = getattr(self._config, "workerinput", None)
         if worker is not None:
             return Root(Path(worker[_ROOT]), retention=retention)
         basetemp = self._config.option.basetemp
         if basetemp:
-            # a folder the user named is never pruned, whatever retention says
-            return Root(Path(basetemp), retention=KEEP_EVERYTHING)
+            # a root like any other: runs go inside it, and only folders
+            # cot.tmppath made there are ever removed
+            return Root(Path(basetemp), retention=retention)
         temproot = os.environ.get("PYTEST_DEBUG_TEMPROOT")
         return Root.for_project(
             self._config.rootpath.name,
@@ -100,14 +111,16 @@ class _State:
         )
 
     @property
-    def process(self) -> str:
+    def process(self) -> str | None:
+        """The xdist worker's folder name; None for the controller and
+        for a run without xdist, whose folders go in the run itself."""
         worker = getattr(self._config, "workerinput", None)
-        return str(worker[_PROCESS]) if worker is not None else "main"
+        return str(worker[_PROCESS]) if worker is not None else None
 
     @property
     def run(self) -> Run:
         if self._run is None:
-            root = self._root()
+            root = self.root
             worker = getattr(self._config, "workerinput", None)
             if worker is not None:
                 self._run = root.join_run(worker[_RUN_ID])
@@ -126,50 +139,23 @@ class _State:
             )
 
 
-# An empty folder this young was made by whoever started pytest, for this
-# run, the way pytester's runpytest_subprocess does it.
-_FRESH_SECONDS = 10.0
-
-
 def _check_basetemp(config: pytest.Config) -> None:
-    basetemp = config.option.basetemp
-    # xdist hands workers the controller's options, by then the folder exists
-    if not basetemp or hasattr(config, "workerinput"):
+    # xdist hands workers the controller's options; the controller checked
+    if not config.option.basetemp or hasattr(config, "workerinput"):
         return
-    path = Path(basetemp)
     try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return
-    # lstat, never stat: a symlink to a fresh empty folder is not fresh
-    owned = not hasattr(os, "getuid") or info.st_uid == os.getuid()
-    fresh = (
-        stat.S_ISDIR(info.st_mode)
-        and owned
-        and time.time() - info.st_mtime < _FRESH_SECONDS
-        and not any(path.iterdir())
-    )
-    if fresh:
-        config.issue_config_time_warning(
-            pytest.PytestWarning(
-                f"--basetemp={basetemp} already exists; using it because it is"
-                f" empty and less than {_FRESH_SECONDS:.0f}s old. Pass a path"
-                " that does not exist yet."
-            ),
-            stacklevel=2,
-        )
-        return
-    msg = (
-        f"--basetemp={basetemp} already exists. cot.tmppath only creates a"
-        " new folder there and never deletes one; remove it yourself or"
-        " name a path that does not exist yet."
-    )
-    raise pytest.UsageError(msg)
+        config.stash[_state].root.ensure()
+    except UnsafeRootError as error:
+        msg = f"--basetemp={config.option.basetemp}: {error.strerror}"
+        raise pytest.UsageError(msg) from None
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    state = config.stash[_state] = _State(config)
     _check_basetemp(config)
-    config.stash[_state] = _State(config)
+    # what pytest's own tmpdir plugin sets: pytest-xdist and other plugins
+    # look for it, and get the cot.tmppath factory
+    config._tmp_path_factory = TempPathFactory(state)  # type: ignore[attr-defined]
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -192,9 +178,10 @@ class TempPathFactory:
         self._state = state
 
     def getbasetemp(self) -> Path:
-        # per process, so getbasetemp().parent is the run's shared folder,
-        # as it is for pytest under xdist
-        return self._state.run.process_folder(self._state.process)
+        # the run; in an xdist worker its own folder in the run, so
+        # getbasetemp().parent is the run there, as it is for pytest
+        run, process = self._state.run, self._state.process
+        return run.path if process is None else run.process_folder(process)
 
     def mktemp(self, basename: str, numbered: bool = True) -> Path:
         # Inside getbasetemp(), as pytest does. Every item gets a unique
@@ -204,7 +191,8 @@ class TempPathFactory:
 
 @pytest.fixture(scope="session")
 def tmp_path_factory(request: pytest.FixtureRequest) -> TempPathFactory:
-    return TempPathFactory(request.config.stash[_state])
+    factory: TempPathFactory = request.config._tmp_path_factory  # type: ignore[attr-defined]
+    return factory
 
 
 @pytest.fixture
