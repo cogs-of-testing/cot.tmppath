@@ -56,3 +56,28 @@ def test_closing_reports_what_was_removed(root_path: Path) -> None:
     report = run.close()
     assert old.path in report.removed
     assert report.failed == ()
+
+
+def test_project_names_sharing_a_prefix_keep_their_own_runs(tmp_path: Path) -> None:
+    # runs of both live side by side in the user folder, told apart by marker
+    project_a = Root.for_project(
+        "a", temproot=tmp_path, retention=Retention(keep_runs=1)
+    )
+    with project_a.start_run() as run_a:
+        kept = run_a.path
+    project_ab = Root.for_project(
+        "a-b", temproot=tmp_path, retention=Retention(keep_runs=1)
+    )
+    for _ in range(3):
+        with project_ab.start_run():
+            pass
+    assert kept.is_dir()
+    assert len(list(project_ab.path.glob("a-b-*"))) == 1
+
+
+def test_all_projects_are_found_from_their_runs(tmp_path: Path) -> None:
+    for project in ("beta", "alpha"):
+        with Root.for_project(project, temproot=tmp_path).start_run():
+            pass
+    found = Root.all_projects(temproot=tmp_path)
+    assert [root.project for root in found] == ["alpha", "beta"]

@@ -65,9 +65,11 @@ The starting point is deliberately simple:
   run its own folder directly in the run. The manager of the processes
   picks the names (the xdist controller names `gw0`, `gw1`, ...), never the
   processes themselves.
-- **The default root is per user:** `{temproot}/cot.tmppath-{user}/{project}`,
-  with a private, owner-checked user folder, so another user cannot block or
-  read a project's runs by creating its folder first.
+- **The default root is per user:** `{temproot}/cot-{user}`, a private,
+  owner-checked folder, so another user cannot block or read a project's
+  runs by creating it first. The project is not a folder level: it starts
+  the run's name (`{project}-{date}-{time}-{random}`) and is recorded in the
+  run, so an item sits two levels below the temp folder, as with pytest.
 - **item** folders sit directly in the run folder, side by side, whatever
   the item is: a test, a module fixture's data, a worker's scratch, a staging
   area. Grouping is expressed in the item's name, not in extra levels.
