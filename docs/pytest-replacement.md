@@ -72,12 +72,12 @@ is not worth relying on.
    `Path`), or deliberately leaves them out to push a suite off `py.path`.
 2. **`tmp_path_factory` duck type.** `mktemp(basename, numbered=True)` and
    `getbasetemp()`, as pytester and existing plugins and conftests call them.
-3. **`--basetemp`.** It is still parsed and validated by pytest. The
-   replacement reads `config.option.basetemp` and treats it as a new folder
-   to create: an existing path is refused, because pytest's `--basetemp`
-   deletes whatever is there. Nothing under a `--basetemp` is ever deleted,
-   whatever the retention settings say; cleaning it up is the user's job.
-   xdist hands workers the controller's options, so workers skip the check.
+3. **`--basetemp`.** It is still parsed and validated by pytest, which
+   deletes whatever is there. The replacement reads `config.option.basetemp`
+   and uses it as a cot.tmppath root that holds the runs: it is created if
+   missing, adopted if empty, reused if cot.tmppath made it, and refused
+   otherwise, so nothing it did not make is ever touched. xdist hands
+   workers the controller's options, so workers skip the check.
 4. **xdist workers join the controller's run.** With A, xdist's `hasattr`
    check fails silently and workers get no basetemp at all. The replacement
    implements `pytest_configure_node` (as an `optionalhook`) to put the run's
@@ -115,8 +115,11 @@ above:
 - In its `pytest_addoption` it unregisters the `tmpdir` plugin and blocks the
   name, so `-p no:tmpdir` is not needed. A plugin given with `-p` is loaded
   while the command line is pre-parsed, before any `pytest_configure`, so the
-  tmpdir plugin never configures itself, `config._tmp_path_factory` never
-  exists, and legacypath skips its `tmpdir` fixtures **(verified)**.
+  tmpdir plugin never configures itself and legacypath skips its `tmpdir`
+  fixtures **(verified)**. The plugin sets `config._tmp_path_factory` to its
+  own factory, so plugins that use it (pytest-xdist among them) get
+  cot.tmppath's folders, and pytest's basetemp handling is replaced as a
+  whole.
 - The tmpdir plugin's ini options were already registered by then, so
   `tmp_path_retention_count` and `tmp_path_retention_policy` stay valid under
   `--strict-config`. If the user also passes `-p no:tmpdir`, the plugin
@@ -125,29 +128,24 @@ above:
   `getbasetemp`. It deliberately leaves out the `py.path` fixtures `tmpdir`
   and `tmpdir_factory` (point 1), so a suite that still uses them fails with
   "fixture not found" and has to move to `tmp_path`.
-- `getbasetemp()` is the process's own folder in the run, named by the
-  xdist controller (`gw0`, ...) or `main` without xdist, so
-  `getbasetemp().parent` is the run's shared folder, as with pytest under
-  xdist. Unlike pytest, `tmp_path` folders are not inside `getbasetemp()`:
-  items sit flat in the run.
+- `getbasetemp()` is the run folder. In an xdist worker it is the worker's
+  own folder in the run, named by the controller (`gw0`, ...), so
+  `getbasetemp().parent` is the run, as with pytest under xdist. As with
+  pytest, `tmp_path` and `mktemp` folders are made inside `getbasetemp()`
+  (`Run.item(name, process=...)`).
 - The run is started on first use, not at configure time, so a session that
   asks for no temporary folder creates nothing **(verified)**.
-- `--basetemp` must name a folder that does not exist yet; the plugin
-  refuses an existing one with a usage error **(verified)**, creates the new
-  one, and deletes nothing under it (`KEEP_EVERYTHING`).
+- `--basetemp` names the root that holds the runs. A non-empty folder that
+  cot.tmppath did not make, a symlink, or another user's folder is refused
+  with a usage error and left untouched **(verified)**. Retention applies
+  inside it as anywhere else, to runs cot.tmppath made.
 - Without `--basetemp`, the root is `Root.for_project(rootdir name)`, and
   pytest's retention settings map onto `Retention`: `failed` keeps only
   failed items, `none` keeps no runs.
-- **An existing folder that is empty and less than 10 seconds old** is used
-  with a `PytestWarning` instead of refused: it was made for this run by
-  whoever started pytest, and holds nothing to lose. This is what
-  `pytester.runpytest_subprocess` does: it always creates the `--basetemp`
-  folder just before starting pytest **(verified)**.
-- **Intentional break:** `pytester.runpytest` passes the same `--basetemp`
-  on every call in a test, so from the second call on the folder is neither
-  empty nor fresh and the run is refused. Tests that rely on that, and any
-  other caller that reuses a `--basetemp`, break on purpose; they must pass
-  a new path.
+- `pytester` works unchanged: `runpytest_subprocess` hands over a fresh empty
+  `--basetemp`, which is adopted, and inline `runpytest` passes the same
+  `--basetemp` on every call, which is reused because cot.tmppath made it
+  **(verified)**.
 - xdist workers get the root and run id through `pytest_configure_node` and
   join the controller's run.
 - An item's fate is decided at its `teardown` report from setup, call and

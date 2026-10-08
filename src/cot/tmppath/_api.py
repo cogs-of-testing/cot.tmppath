@@ -269,6 +269,7 @@ class Run:
         self._dir = folder
         self._token = f"{os.getpid()}-{secrets.token_hex(4)}"
         self._trash: Dir | None = None
+        self._processes: dict[str, Dir] = {}
         self._closed = False
 
     def _hold(self) -> None:
@@ -282,18 +283,26 @@ class Run:
             msg = f"run {self.path} is closed"
             raise ValueError(msg)
 
-    def item(self, name: str) -> Path:
-        """Create a new folder for ``name`` directly in the run folder."""
+    def item(self, name: str, *, process: str | None = None) -> Path:
+        """Create a new folder for ``name`` in the run folder, or inside
+        the process folder ``process`` when one is named."""
         self._check_open()
+        folder = self._dir if process is None else self._process_dir(process)
         layout = self._root.layout
         for _ in range(100_000):
-            candidate = _check_name(layout.item_name(self.path, name), "item")
+            candidate = _check_name(layout.item_name(folder.path, name), "item")
             try:
-                return self._dir.mkdir(candidate)
+                return folder.mkdir(candidate)
             except FileExistsError:
                 continue
-        msg = f"no free item name for {name!r} in {self.path}"
+        msg = f"no free item name for {name!r} in {folder.path}"
         raise FileExistsError(errno.EEXIST, msg)
+
+    def _process_dir(self, name: str) -> Dir:
+        if name not in self._processes:
+            self.process_folder(name)
+            self._processes[name] = self._dir.open_dir(name)
+        return self._processes[name]
 
     def process_folder(self, name: str) -> Path:
         """The folder of one process in this run, named by whoever manages
@@ -321,7 +330,11 @@ class Run:
         """
         self._check_open()
         path = Path(path)
-        if path.parent != self.path:
+        if path.parent == self.path:
+            folder = self._dir
+        elif path.parent.parent == self.path and path.parent.name in self._processes:
+            folder = self._processes[path.parent.name]
+        else:
             msg = f"{path} is not an item of run {self.path}"
             raise ValueError(msg)
         if outcome is Outcome.FAILED or not self._root.retention.keep_failed_only:
@@ -332,7 +345,7 @@ class Run:
                 self._dir.mkdir(trash)
             self._trash = self._dir.open_dir(trash)
         with suppress(FileNotFoundError):
-            self._dir.rename(path.name, secrets.token_hex(8), into=self._trash)
+            folder.rename(path.name, secrets.token_hex(8), into=self._trash)
 
     @contextmanager
     def place(self, destination: Path) -> Iterator[Path]:
@@ -362,6 +375,9 @@ class Run:
                 holders.unlink(self._token)
         except FileNotFoundError:
             pass
+        for process in self._processes.values():
+            process.close()
+        self._processes.clear()
         if self._trash is not None:
             self._trash.close()
             reason = self._dir.rmtree(_TRASH + self._token)
@@ -550,6 +566,17 @@ class Root:
                 return None
             folder = child
         return folder
+
+    def ensure(self) -> None:
+        """Create the root, or check an existing one, without starting a run.
+
+        Raises ``UnsafeRootError`` for anything the root may not use: a
+        symlink, another user's folder, or a non-empty folder cot.tmppath
+        did not create. Nothing in such a folder is touched.
+        """
+        folder = self._open(create=True)
+        assert folder is not None
+        folder.close()
 
     def start_run(self) -> Run:
         """Create a new run folder, held by this process."""

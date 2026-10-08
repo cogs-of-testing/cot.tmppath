@@ -17,6 +17,18 @@ def test_keep_failed_only_keeps_failed_items(root_path: Path) -> None:
     assert failed.is_dir()
 
 
+def test_items_in_a_process_folder_follow_retention(root_path: Path) -> None:
+    root = Root(root_path, retention=Retention(keep_failed_only=True))
+    with root.start_run() as run:
+        passed = run.item("test_ok", process="gw0")
+        failed = run.item("test_bad", process="gw0")
+        assert passed.parent == failed.parent == run.process_folder("gw0")
+        run.finish_item(passed, Outcome.PASSED)
+        run.finish_item(failed, Outcome.FAILED)
+    assert not passed.exists()
+    assert failed.is_dir()
+
+
 def test_custom_root_keeps_the_last_runs(root_path: Path) -> None:
     root = Root(root_path, retention=Retention(keep_runs=3))
     runs = []

@@ -7,9 +7,7 @@ behaviour tests are xfail until the core is built.
 
 from __future__ import annotations
 
-import os
 import sys
-import time
 
 import pytest
 
@@ -31,7 +29,7 @@ def test_addopts_opt_in_takes_over(pytester: pytest.Pytester) -> None:
         def test_takeover(request, tmp_path_factory):
             config = request.config
             assert not config.pluginmanager.has_plugin("tmpdir")
-            assert not hasattr(config, "_tmp_path_factory")
+            assert config._tmp_path_factory is tmp_path_factory
             assert type(tmp_path_factory).__module__ == {PLUGIN!r}
         """
     )
@@ -147,18 +145,27 @@ def test_existing_basetemp_is_refused(pytester: pytest.Pytester) -> None:
     pytester.makepyfile("def test_nothing(): pass")
     result = _run(pytester, "-p", PLUGIN, f"--basetemp={existing}")
     assert result.ret == pytest.ExitCode.USAGE_ERROR
-    result.stderr.fnmatch_lines(["*--basetemp=*existing already exists*"])
+    result.stderr.fnmatch_lines(["*--basetemp=*not created by cot.tmppath*"])
     assert precious.read_text() == "keep me"
+    assert sorted(p.name for p in existing.iterdir()) == ["precious.txt"]
 
 
-def test_new_basetemp_is_created_and_never_pruned(pytester: pytest.Pytester) -> None:
+def test_basetemp_holds_the_runs_and_is_reused(pytester: pytest.Pytester) -> None:
     base = pytester.path / "new"
-    pytester.makeini(
-        "[pytest]\ntmp_path_retention_policy = none\ntmp_path_retention_count = 0\n"
+    pytester.makeini("[pytest]\ntmp_path_retention_count = 2\n")
+    pytester.makepyfile(
+        """
+        def test_layout(tmp_path, tmp_path_factory):
+            run = tmp_path_factory.getbasetemp()
+            assert tmp_path.parent == run
+            assert run.parent.name == "new"
+            (tmp_path / "f").touch()
+        """
     )
-    pytester.makepyfile("def test_passes(tmp_path): (tmp_path / 'f').touch()")
-    _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=1)
-    assert list(base.rglob("f"))
+    for _ in range(3):
+        _run(pytester, "-p", PLUGIN, f"--basetemp={base}").assert_outcomes(passed=1)
+    # retention applies inside a --basetemp too, to runs cot.tmppath made
+    assert len([p for p in base.iterdir() if p.is_dir()]) == 2
 
 
 def test_xdist_workers_accept_the_new_basetemp(pytester: pytest.Pytester) -> None:
@@ -169,29 +176,24 @@ def test_xdist_workers_accept_the_new_basetemp(pytester: pytest.Pytester) -> Non
     result.assert_outcomes(passed=2)
 
 
-def test_fresh_empty_basetemp_is_used_with_a_warning(pytester: pytest.Pytester) -> None:
-    fresh = pytester.mkdir("fresh")
-    pytester.makepyfile("def test_nothing(): pass")
-    result = _run(pytester, "-p", PLUGIN, f"--basetemp={fresh}")
-    result.assert_outcomes(passed=1, warnings=1)
-    result.stdout.fnmatch_lines(["*--basetemp=*fresh already exists; using it*"])
+def test_empty_basetemp_is_adopted(pytester: pytest.Pytester) -> None:
+    empty = pytester.mkdir("empty")
+    pytester.makepyfile("def test_one(tmp_path): pass")
+    _run(pytester, "-p", PLUGIN, f"--basetemp={empty}").assert_outcomes(passed=1)
+    assert (empty / ".cot-tmppath").is_file()
 
 
-def test_old_empty_basetemp_is_refused(pytester: pytest.Pytester) -> None:
-    old = pytester.mkdir("old")
-    an_hour_ago = time.time() - 3600
-    os.utime(old, (an_hour_ago, an_hour_ago))
-    pytester.makepyfile("def test_nothing(): pass")
-    result = _run(pytester, "-p", PLUGIN, f"--basetemp={old}")
-    assert result.ret == pytest.ExitCode.USAGE_ERROR
-
-
-def test_pytesters_own_subprocess_runs_work_with_a_warning(
-    pytester: pytest.Pytester,
-) -> None:
-    pytester.makepyfile("def test_nothing(): pass")
-    result = pytester.runpytest_subprocess("-p", "no:cacheprovider", "-p", PLUGIN)
-    result.assert_outcomes(passed=1, warnings=1)
+def test_pytesters_runs_work(pytester: pytest.Pytester) -> None:
+    # runpytest_subprocess hands over a fresh empty --basetemp; inline runs
+    # reuse the same --basetemp for every call in a test
+    pytester.makepyfile("def test_one(tmp_path): pass")
+    for _ in range(2):
+        result = pytester.runpytest_subprocess("-p", "no:cacheprovider", "-p", PLUGIN)
+        result.assert_outcomes(passed=1)
+    pytester.makeconftest("")
+    for _ in range(2):
+        result = pytester.runpytest_inprocess("-p", "no:cacheprovider", "-p", PLUGIN)
+        result.assert_outcomes(passed=1)
 
 
 def test_symlink_to_a_fresh_empty_folder_is_refused(pytester: pytest.Pytester) -> None:
@@ -227,3 +229,24 @@ def test_getbasetemp_is_per_process_and_its_parent_is_the_run(
     result.assert_outcomes(passed=4)
     (run,) = [p for p in base.iterdir() if p.is_dir()]
     assert len(list(run.glob("shared-*"))) == 4
+
+
+@pytest.mark.parametrize("workers", [None, "2"])
+def test_folders_are_made_inside_getbasetemp(
+    pytester: pytest.Pytester, workers: str | None
+) -> None:
+    if workers:
+        pytest.importorskip("xdist")
+    pytester.makepyfile(
+        """
+        def test_tmp_path(tmp_path, tmp_path_factory):
+            assert tmp_path.parent == tmp_path_factory.getbasetemp()
+
+        def test_mktemp(tmp_path_factory):
+            made = tmp_path_factory.mktemp("made")
+            assert made.parent == tmp_path_factory.getbasetemp()
+        """
+    )
+    base = pytester.path / "new"
+    args = ["-n", workers] if workers else []
+    _run(pytester, "-p", PLUGIN, f"--basetemp={base}", *args).assert_outcomes(passed=2)
