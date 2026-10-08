@@ -2,6 +2,12 @@
 
 <!-- towncrier release notes start -->
 
+## 0.3.0 (2026-10-08)
+
+### Added
+
+- The pytest binding replaces pytest's basetemp handling as a whole: `getbasetemp()` is the run folder (an xdist worker's own folder in the run), `tmp_path` and `mktemp()` folders are made inside it, and `config._tmp_path_factory` is the cot.tmppath factory. `--basetemp` names a root that holds the runs; it is reused when cot.tmppath made it, so repeated `pytester.runpytest()` calls work, and a folder cot.tmppath did not make is refused and never touched. New: `Root.ensure()`, and `Run.item(name, process=...)`.
+
 ## 0.2.1 (2026-10-07)
 
 ### Fixed
